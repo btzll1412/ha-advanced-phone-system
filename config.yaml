@@ -1,0 +1,77 @@
+name: "Advanced Phone System"
+version: "1.0.0"
+slug: "advanced_phone_system"
+description: "Professional VoIP phone system with automation and broadcast capabilities"
+url: "https://github.com/btzll1412/ha-advanced-phone-system"
+arch:
+  - armhf
+  - armv7
+  - aarch64
+  - amd64
+  - i386
+init: false
+startup: application
+boot: auto
+ports:
+  5060/tcp: 5060
+  5060/udp: 5060
+  10000-10099/udp: 10000-10099
+  8088/tcp: 8088
+ports_description:
+  5060/tcp: "SIP TCP Port"
+  5060/udp: "SIP UDP Port"
+  10000-10099/udp: "RTP Media Ports"
+  8088/tcp: "Web Interface & API"
+options:
+  sip_trunk:
+    enabled: false
+    provider: "custom"
+    host: "sip.provider.com"
+    port: 5060
+    username: ""
+    password: ""
+    from_domain: ""
+  extensions:
+    - number: "100"
+      name: "Home Assistant"
+      secret: "changeme123"
+  contact_groups:
+    - name: "Family"
+      numbers: []
+      caller_id: "Home Alert"
+  web_auth:
+    enabled: false
+    username: "admin"
+    password: "admin"
+  tts_engine: "google_translate"
+  recordings_path: "/share/phone_recordings"
+  max_concurrent_calls: 5
+  log_level: "info"
+schema:
+  sip_trunk:
+    enabled: bool
+    provider: list(flowroute|twilio|voipms|vonage|bandwidth|custom)
+    host: str
+    port: port
+    username: str?
+    password: password?
+    from_domain: str?
+  extensions:
+    - number: str
+      name: str
+      secret: password
+  contact_groups:
+    - name: str
+      numbers: [str]
+      caller_id: str?
+  web_auth:
+    enabled: bool
+    username: str?
+    password: password?
+  tts_engine: list(google_translate|piper)?
+  recordings_path: str
+  max_concurrent_calls: int(1,20)
+  log_level: list(debug|info|warning|error)
+homeassistant_api: true
+hassio_api: true
+hassio_role: default
