@@ -1,0 +1,161 @@
+make_call:
+  name: Make Call
+  description: Make a phone call with TTS or recording
+  fields:
+    phone_number:
+      name: Phone Number
+      description: Phone number to call (E.164 format, e.g., +1234567890)
+      required: true
+      example: "+1234567890"
+      selector:
+        text:
+    tts_text:
+      name: TTS Text
+      description: Text to speak via text-to-speech
+      required: false
+      example: "This is a test call from Home Assistant"
+      selector:
+        text:
+          multiline: true
+    recording_file:
+      name: Recording File
+      description: Name of pre-recorded audio file (without path)
+      required: false
+      example: "alert.wav"
+      selector:
+        text:
+    caller_id:
+      name: Caller ID
+      description: Caller ID to display
+      required: false
+      example: "Home Assistant"
+      selector:
+        text:
+    max_retries:
+      name: Max Retries
+      description: Maximum number of retry attempts
+      required: false
+      default: 3
+      selector:
+        number:
+          min: 0
+          max: 10
+
+create_broadcast:
+  name: Create Broadcast
+  description: Send a message to multiple phone numbers
+  fields:
+    name:
+      name: Broadcast Name
+      description: Name for this broadcast
+      required: true
+      example: "Emergency Alert"
+      selector:
+        text:
+    phone_numbers:
+      name: Phone Numbers
+      description: List of phone numbers to call
+      required: false
+      example: ["+1234567890", "+1234567891"]
+      selector:
+        object:
+    group_name:
+      name: Group Name
+      description: Name of saved contact group
+      required: false
+      example: "Family"
+      selector:
+        text:
+    tts_text:
+      name: TTS Text
+      description: Text to speak via text-to-speech
+      required: false
+      example: "This is an emergency broadcast"
+      selector:
+        text:
+          multiline: true
+    recording_file:
+      name: Recording File
+      description: Name of pre-recorded audio file
+      required: false
+      example: "emergency.wav"
+      selector:
+        text:
+    caller_id:
+      name: Caller ID
+      description: Caller ID to display
+      required: false
+      example: "Emergency Services"
+      selector:
+        text:
+    concurrent_calls:
+      name: Concurrent Calls
+      description: Maximum simultaneous calls
+      required: false
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 20
+
+call_with_sensor:
+  name: Call with Sensor Data
+  description: Make a call with dynamic sensor values in message
+  fields:
+    phone_number:
+      name: Phone Number
+      description: Phone number to call
+      required: true
+      example: "+1234567890"
+      selector:
+        text:
+    message:
+      name: Message Template
+      description: Message with sensor templates
+      required: true
+      example: "Temperature is {{ states('sensor.temperature') }} degrees"
+      selector:
+        text:
+          multiline: true
+    caller_id:
+      name: Caller ID
+      description: Caller ID to display
+      required: false
+      example: "Home Alert"
+      selector:
+        text:
+    max_retries:
+      name: Max Retries
+      description: Maximum number of retry attempts
+      required: false
+      default: 3
+      selector:
+        number:
+          min: 0
+          max: 10
+
+create_group:
+  name: Create Contact Group
+  description: Create a new contact group
+  fields:
+    name:
+      name: Group Name
+      description: Name for the contact group
+      required: true
+      example: "Family"
+      selector:
+        text:
+    phone_numbers:
+      name: Phone Numbers
+      description: List of phone numbers in group
+      required: true
+      example: ["+1234567890", "+1234567891"]
+      selector:
+        object:
+    caller_id:
+      name: Default Caller ID
+      description: Default caller ID for this group
+      required: false
+      example: "Family Alert"
+      selector:
+        text:
