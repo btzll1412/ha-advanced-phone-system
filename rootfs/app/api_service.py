@@ -14,20 +14,33 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse  # Add FileResponse here
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import aiofiles
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize FastAPI
 app = FastAPI(title="Advanced Phone System API", version="1.0.0")
+
+# === ADD THIS NEW SECTION HERE ===
+@app.get("/", response_class=HTMLResponse)
+async def serve_web_ui():
+    """Serve the web UI"""
+    return FileResponse("/app/web/index.html")
+
+@app.get("/api")
+async def api_info():
+    """API information endpoint"""
+    return {
+        "service": "Advanced Phone System API",
+        "version": "1.0.0",
+        "status": "running"
+    }
+# === END NEW SECTION ===
 
 # Configuration paths
 CONFIG_FILE = "/data/options.json"
