@@ -15,13 +15,11 @@ boot: auto
 ports:
   5060/tcp: 5060
   5060/udp: 5060
-  10000-10099/udp: 10000-10099
   8088/tcp: 8088
 ports_description:
   5060/tcp: "SIP TCP Port"
   5060/udp: "SIP UDP Port"
-  10000-10099/udp: "RTP Media Ports"
-  8088/tcp: "Web Interface & API"
+  8088/tcp: "API and Web Interface"
 options:
   sip_trunk:
     enabled: false
@@ -75,3 +73,4 @@ schema:
 homeassistant_api: true
 hassio_api: true
 hassio_role: default
+host_network: true
