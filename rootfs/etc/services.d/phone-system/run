@@ -130,8 +130,8 @@ ASTERISK_PID=$!
 # Wait for Asterisk to initialize
 sleep 5
 
-# Check Asterisk status
-if ps -p $ASTERISK_PID > /dev/null; then
+# Check Asterisk status (BusyBox compatible)
+if kill -0 $ASTERISK_PID 2>/dev/null; then
     bashio::log.info "✓ Asterisk PBX started successfully"
 else
     bashio::log.error "✗ Asterisk failed to start!"
@@ -147,8 +147,8 @@ API_PID=$!
 # Wait for API to start
 sleep 3
 
-# Check API status
-if ps -p $API_PID > /dev/null; then
+# Check API status (BusyBox compatible)
+if kill -0 $API_PID 2>/dev/null; then
     bashio::log.info "✓ API service started successfully"
 else
     bashio::log.error "✗ API service failed to start!"
@@ -161,15 +161,15 @@ bashio::log.info "  Advanced Phone System is READY!"
 bashio::log.info "  Web UI: http://homeassistant.local:8088"
 bashio::log.info "================================================"
 
-# Monitor both processes
+# Monitor both processes (BusyBox compatible)
 while true; do
-    if ! ps -p $ASTERISK_PID > /dev/null; then
+    if ! kill -0 $ASTERISK_PID 2>/dev/null; then
         bashio::log.error "Asterisk process died - restarting addon..."
         kill $API_PID 2>/dev/null
         exit 1
     fi
     
-    if ! ps -p $API_PID > /dev/null; then
+    if ! kill -0 $API_PID 2>/dev/null; then
         bashio::log.error "API service died - restarting addon..."
         kill $ASTERISK_PID 2>/dev/null
         exit 1
