@@ -74,3 +74,6 @@ homeassistant_api: true
 hassio_api: true
 hassio_role: default
 host_network: true
+dns:
+  - 8.8.8.8
+  - 8.8.4.4
