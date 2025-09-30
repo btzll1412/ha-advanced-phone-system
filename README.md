@@ -43,12 +43,12 @@ A professional VoIP phone system add-on for Home Assistant with Flowroute integr
 
 ### Step 3: Install Custom Integration (2 minutes)
 
-The add-on includes a Home Assistant integration for automation services. Install it via SSH:
+### The add-on includes a Home Assistant integration for automation services. Install it via SSH:
 ```bash
-# SSH into Home Assistant
+### SSH into Home Assistant:
 ssh root@homeassistant.local
 
-# Create directory and copy integration
+# Create directory and copy integration:
 mkdir -p /config/custom_components
 cp -r /addons/ha-advanced-phone-system/custom_components/advanced_phone_system /config/custom_components/
 
@@ -61,7 +61,7 @@ Add to your /config/configuration.yaml:
 yamladvanced_phone_system:
   host: "localhost"
   port: 8088
-Step 5: Restart Home Assistant
+### Step 5: Restart Home Assistant
 bashha core restart
 Or use: Settings → System → Restart
 Step 6: Configure the Add-on
@@ -70,7 +70,7 @@ Go to Settings → Add-ons → Advanced Phone System
 Click the Configuration tab
 Enter your Flowroute credentials:
 
-yamlsip_trunk:
+sip_trunk:
   enabled: true
   provider: "flowroute"
   host: "sip.flowroute.com"
@@ -120,7 +120,7 @@ Open: http://homeassistant.local:8088
 You should see the dashboard
 
 Step 9: Make Your First Test Call
-yamlservice: advanced_phone_system.make_call
+service: advanced_phone_system.make_call
 data:
   phone_number: "+1234567890"  # YOUR phone number
   tts_text: "Hello! This is a test call from Home Assistant."
