@@ -1,0 +1,179 @@
+#!/usr/bin/with-contenv bashio
+
+bashio::log.info "================================================"
+bashio::log.info "  Advanced Phone System - Starting..."
+bashio::log.info "================================================"
+
+# Load configuration
+SIP_ENABLED=$(bashio::config 'sip_trunk.enabled')
+SIP_PROVIDER=$(bashio::config 'sip_trunk.provider')
+SIP_HOST=$(bashio::config 'sip_trunk.host')
+SIP_PORT=$(bashio::config 'sip_trunk.port')
+SIP_USER=$(bashio::config 'sip_trunk.username')
+SIP_PASS=$(bashio::config 'sip_trunk.password')
+SIP_DOMAIN=$(bashio::config 'sip_trunk.from_domain')
+
+# Create directories
+mkdir -p /var/lib/asterisk/sounds/custom
+mkdir -p /var/spool/asterisk/outgoing
+mkdir -p /data/recordings
+mkdir -p /data/database
+
+# Generate Asterisk sip.conf
+bashio::log.info "Generating Asterisk configuration..."
+
+cat > /etc/asterisk/sip.conf <<EOF
+[general]
+context=default
+allowoverlap=no
+udpbindaddr=0.0.0.0:${SIP_PORT}
+tcpenable=yes
+tcpbindaddr=0.0.0.0:${SIP_PORT}
+transport=udp
+srvlookup=yes
+allowguest=no
+alwaysauthreject=yes
+nat=force_rport,comedia
+externrefresh=10
+
+; Codecs
+disallow=all
+allow=ulaw
+allow=alaw
+allow=g729
+allow=gsm
+
+; RTP Settings
+rtpstart=10000
+rtpend=10099
+
+; Security
+requirecalltoken=yes
+
+EOF
+
+# Add SIP trunk if enabled
+if [ "$SIP_ENABLED" = "true" ]; then
+    bashio::log.info "Configuring SIP trunk: ${SIP_PROVIDER}"
+    
+    # Use from_domain if provided, otherwise use host
+    DOMAIN="${SIP_DOMAIN:-$SIP_HOST}"
+    
+    cat >> /etc/asterisk/sip.conf <<EOF
+
+; SIP Trunk Registration
+register => ${SIP_USER}:${SIP_PASS}@${SIP_HOST}:${SIP_PORT}/${SIP_USER}
+
+[trunk_main]
+type=peer
+host=${SIP_HOST}
+port=${SIP_PORT}
+username=${SIP_USER}
+secret=${SIP_PASS}
+fromuser=${SIP_USER}
+fromdomain=${DOMAIN}
+insecure=port,invite
+context=inbound
+dtmfmode=rfc2833
+canreinvite=no
+qualify=yes
+nat=force_rport,comedia
+
+EOF
+
+    bashio::log.info "✓ SIP trunk configured"
+else
+    bashio::log.warning "SIP trunk disabled - enable in configuration to make calls"
+fi
+
+# Add extensions
+bashio::log.info "Configuring extensions..."
+EXTENSION_COUNT=$(bashio::config 'extensions|length')
+
+for (( i=0; i < EXTENSION_COUNT; i++ )); do
+    EXT_NUMBER=$(bashio::config "extensions[${i}].number")
+    EXT_NAME=$(bashio::config "extensions[${i}].name")
+    EXT_SECRET=$(bashio::config "extensions[${i}].secret")
+    
+    bashio::log.info "  - Extension ${EXT_NUMBER}: ${EXT_NAME}"
+    
+    cat >> /etc/asterisk/sip.conf <<EOF
+
+[${EXT_NUMBER}]
+type=friend
+secret=${EXT_SECRET}
+context=internal
+host=dynamic
+dtmfmode=rfc2833
+canreinvite=no
+nat=force_rport,comedia
+qualify=yes
+callgroup=1
+pickupgroup=1
+callerid="${EXT_NAME}" <${EXT_NUMBER}>
+
+EOF
+done
+
+bashio::log.info "✓ ${EXTENSION_COUNT} extension(s) configured"
+
+# Set permissions
+chown -R asterisk:asterisk /etc/asterisk
+chown -R asterisk:asterisk /var/lib/asterisk
+chown -R asterisk:asterisk /var/spool/asterisk
+
+# Start Asterisk
+bashio::log.info "Starting Asterisk PBX..."
+asterisk -f &
+ASTERISK_PID=$!
+
+# Wait for Asterisk to initialize
+sleep 5
+
+# Check Asterisk status
+if ps -p $ASTERISK_PID > /dev/null; then
+    bashio::log.info "✓ Asterisk PBX started successfully"
+else
+    bashio::log.error "✗ Asterisk failed to start!"
+    exit 1
+fi
+
+# Start API service
+bashio::log.info "Starting API service..."
+cd /app
+python3 api_service.py &
+API_PID=$!
+
+# Wait for API to start
+sleep 3
+
+# Check API status
+if ps -p $API_PID > /dev/null; then
+    bashio::log.info "✓ API service started successfully"
+else
+    bashio::log.error "✗ API service failed to start!"
+    kill $ASTERISK_PID 2>/dev/null
+    exit 1
+fi
+
+bashio::log.info "================================================"
+bashio::log.info "  Advanced Phone System is READY!"
+bashio::log.info "  Web UI: http://homeassistant.local:8088"
+bashio::log.info "================================================"
+
+# Monitor both processes
+while true; do
+    if ! ps -p $ASTERISK_PID > /dev/null; then
+        bashio::log.error "Asterisk process died - restarting addon..."
+        kill $API_PID 2>/dev/null
+        exit 1
+    fi
+    
+    if ! ps -p $API_PID > /dev/null; then
+        bashio::log.error "API service died - restarting addon..."
+        kill $ASTERISK_PID 2>/dev/null
+        exit 1
+    fi
+    
+    sleep 10
+done
