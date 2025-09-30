@@ -52,7 +52,7 @@ ssh root@homeassistant.local
 mkdir -p /config/custom_components
 cp -r /addons/ha-advanced-phone-system/custom_components/advanced_phone_system /config/custom_components/
 
-# Verify it was copied
+## Verify it was copied
 ls /config/custom_components/advanced_phone_system/
 
 You should see: __init__.py, manifest.json, services.yaml
@@ -61,7 +61,7 @@ Add to your /config/configuration.yaml:
 yamladvanced_phone_system:
   host: "localhost"
   port: 8088
-### Step 5: Restart Home Assistant
+## Step 5: Restart Home Assistant
 bashha core restart
 Or use: Settings → System → Restart
 Step 6: Configure the Add-on
