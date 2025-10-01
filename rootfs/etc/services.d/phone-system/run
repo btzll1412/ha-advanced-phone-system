@@ -60,6 +60,9 @@ if [ "$SIP_ENABLED" = "true" ]; then
     # Use from_domain if provided, otherwise use host
     DOMAIN="${SIP_DOMAIN:-$SIP_HOST}"
     
+    # Get caller number if provided
+    SIP_CALLER=$(bashio::config 'sip_trunk.caller_number')
+    
     # Build registration string separately to avoid escape issues
     REG_STRING="${SIP_USER}:${SIP_PASS}@${SIP_HOST}:${SIP_PORT}/${SIP_USER}"
     
@@ -75,7 +78,7 @@ if [ "$SIP_ENABLED" = "true" ]; then
         echo "port=${SIP_PORT}"
         echo "defaultuser=${SIP_USER}"
         echo "secret=${SIP_PASS}"
-        echo "fromuser=${SIP_USER}"
+        echo "fromuser=${SIP_CALLER:-$SIP_USER}"
         echo "fromdomain=${DOMAIN}"
         echo "insecure=port,invite"
         echo "context=inbound"
@@ -85,13 +88,11 @@ if [ "$SIP_ENABLED" = "true" ]; then
         echo "nat=force_rport,comedia"
         echo ""
     } >> /etc/asterisk/sip.conf
-
     bashio::log.info "✓ SIP trunk configured (user: ${SIP_USER})"
     bashio::log.info "  Registration string: ${REG_STRING}"
 else
     bashio::log.warning "SIP trunk disabled - enable in configuration to make calls"
 fi
-
 # Add extensions
 bashio::log.info "Configuring extensions..."
 EXTENSION_COUNT=$(bashio::config 'extensions|length')
