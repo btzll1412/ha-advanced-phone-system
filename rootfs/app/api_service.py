@@ -185,34 +185,47 @@ def get_db():
     return conn
 
 async def generate_tts(text: str) -> Optional[str]:
-    """Generate TTS audio file using festival"""
+    """Generate TTS audio file using espeak"""
     try:
         import subprocess
         
         filename = f"tts_{uuid.uuid4().hex}.wav"
+        temp_path = f"/tmp/{filename}"
         output_path = os.path.join(ASTERISK_SOUNDS, filename)
         
         logger.info(f"TTS requested: {text[:50]}...")
         
-        # Use espeak to generate audio
+        # Use espeak to generate audio to temp file
         result = subprocess.run(
-            ['espeak', '-w', output_path, '-v', 'en-us', '-s', '150', text],
+            ['espeak', '-w', temp_path, '-v', 'en-us', '-s', '150', text],
             capture_output=True,
             check=False
         )
         
-        if result.returncode == 0 and os.path.exists(output_path):
-            logger.info(f"✓ TTS file created: {filename}")
-            return filename
+        if result.returncode == 0 and os.path.exists(temp_path):
+            # Convert to 8kHz mono for Asterisk
+            convert_result = subprocess.run(
+                ['sox', temp_path, '-r', '8000', '-c', '1', output_path],
+                capture_output=True,
+                check=False
+            )
+            
+            # Clean up temp file
+            os.remove(temp_path)
+            
+            if convert_result.returncode == 0 and os.path.exists(output_path):
+                logger.info(f"✓ TTS file created: {filename}")
+                return filename
+            else:
+                logger.error(f"Audio conversion failed")
+                return None
         else:
-            error_msg = result.stderr.decode() if result.stderr else "Unknown error"
-            logger.error(f"TTS generation failed: {error_msg}")
+            logger.error(f"TTS generation failed")
             return None
         
     except Exception as e:
         logger.error(f"Error generating TTS: {e}")
         return None
-
 def create_call_file(phone_number: str, audio_file: str, caller_id: str = None, 
                     call_id: str = None, max_retries: int = 3):
     """Create Asterisk call file"""
