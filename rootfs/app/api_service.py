@@ -191,24 +191,34 @@ async def generate_tts(text: str) -> Optional[str]:
     try:
         import requests
         
+        async def generate_tts(text: str) -> Optional[str]:
+    """Generate TTS audio file using festival"""
+    try:
+        import subprocess
+        
         filename = f"tts_{uuid.uuid4().hex}.wav"
         output_path = os.path.join(ASTERISK_SOUNDS, filename)
         
-        headers = {
-            "Authorization": f"Bearer {HA_TOKEN}",
-            "Content-Type": "application/json"
-        }
-        
-        # Call HA TTS service
-        data = {
-            "message": text,
-            "cache": False
-        }
-        
-        # This is simplified - actual TTS integration needs more work
-        # For now, we'll just return a filename and let HA handle it
         logger.info(f"TTS requested: {text[:50]}...")
-        return filename
+        
+        # Use festival text2wave to generate audio
+        result = subprocess.run(
+            ['text2wave', '-o', output_path],
+            input=text.encode('utf-8'),
+            capture_output=True,
+            check=False
+        )
+        
+        if result.returncode == 0 and os.path.exists(output_path):
+            logger.info(f"TTS file created: {output_path}")
+            return filename
+        else:
+            logger.error(f"TTS generation failed: {result.stderr.decode()}")
+            return None
+        
+    except Exception as e:
+        logger.error(f"Error generating TTS: {e}")
+        return None
         
     except Exception as e:
         logger.error(f"Error generating TTS: {e}")
