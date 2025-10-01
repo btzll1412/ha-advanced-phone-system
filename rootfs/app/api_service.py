@@ -191,7 +191,7 @@ async def generate_tts(text: str) -> Optional[str]:
     try:
         import requests
         
-        async def generate_tts(text: str) -> Optional[str]:
+async def generate_tts(text: str) -> Optional[str]:
     """Generate TTS audio file using festival"""
     try:
         import subprocess
@@ -210,10 +210,11 @@ async def generate_tts(text: str) -> Optional[str]:
         )
         
         if result.returncode == 0 and os.path.exists(output_path):
-            logger.info(f"TTS file created: {output_path}")
+            logger.info(f"✓ TTS file created: {filename}")
             return filename
         else:
-            logger.error(f"TTS generation failed: {result.stderr.decode()}")
+            error_msg = result.stderr.decode() if result.stderr else "Unknown error"
+            logger.error(f"TTS generation failed: {error_msg}")
             return None
         
     except Exception as e:
