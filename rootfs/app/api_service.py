@@ -194,12 +194,11 @@ async def generate_tts(text: str) -> Optional[str]:
         
         logger.info(f"TTS requested: {text[:50]}...")
         
-        # Use festival text2wave to generate audio
-       result = subprocess.run(
-    ['espeak', '-w', output_path, '-v', 'en-us', '-s', '150', text],
-    capture_output=True,
-    check=False
-)
+        # Use espeak to generate audio
+        result = subprocess.run(
+            ['espeak', '-w', output_path, '-v', 'en-us', '-s', '150', text],
+            capture_output=True,
+            check=False
         )
         
         if result.returncode == 0 and os.path.exists(output_path):
