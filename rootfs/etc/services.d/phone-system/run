@@ -22,13 +22,13 @@ mkdir -p /data/database
 # Generate Asterisk sip.conf
 bashio::log.info "Generating Asterisk configuration..."
 
-cat > /etc/asterisk/sip.conf <<EOF
+cat > /etc/asterisk/sip.conf <<'EOF'
 [general]
 context=default
 allowoverlap=no
-udpbindaddr=0.0.0.0:${SIP_PORT}
+udpbindaddr=0.0.0.0
 tcpenable=yes
-tcpbindaddr=0.0.0.0:${SIP_PORT}
+tcpbindaddr=0.0.0.0
 transport=udp
 srvlookup=yes
 allowguest=no
@@ -59,6 +59,7 @@ if [ "$SIP_ENABLED" = "true" ]; then
     # Use from_domain if provided, otherwise use host
     DOMAIN="${SIP_DOMAIN:-$SIP_HOST}"
     
+    # Write SIP trunk config with proper variable expansion
     cat >> /etc/asterisk/sip.conf <<EOF
 
 ; SIP Trunk Registration
@@ -81,7 +82,7 @@ nat=force_rport,comedia
 
 EOF
 
-    bashio::log.info "✓ SIP trunk configured"
+    bashio::log.info "✓ SIP trunk configured (user: ${SIP_USER})"
 else
     bashio::log.warning "SIP trunk disabled - enable in configuration to make calls"
 fi
