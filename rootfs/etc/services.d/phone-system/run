@@ -59,30 +59,34 @@ if [ "$SIP_ENABLED" = "true" ]; then
     # Use from_domain if provided, otherwise use host
     DOMAIN="${SIP_DOMAIN:-$SIP_HOST}"
     
-    # Write SIP trunk config with proper variable expansion
-    cat >> /etc/asterisk/sip.conf <<EOF
-
-; SIP Trunk Registration
-register => ${SIP_USER}:${SIP_PASS}@${SIP_HOST}:${SIP_PORT}/${SIP_USER}
-
-[trunk_main]
-type=peer
-host=${SIP_HOST}
-port=${SIP_PORT}
-username=${SIP_USER}
-secret=${SIP_PASS}
-fromuser=${SIP_USER}
-fromdomain=${DOMAIN}
-insecure=port,invite
-context=inbound
-dtmfmode=rfc2833
-canreinvite=no
-qualify=yes
-nat=force_rport,comedia
-
-EOF
+    # Build registration string separately to avoid escape issues
+    REG_STRING="${SIP_USER}:${SIP_PASS}@${SIP_HOST}:${SIP_PORT}/${SIP_USER}"
+    
+    # Write SIP trunk config
+    {
+        echo ""
+        echo "; SIP Trunk Registration"
+        echo "register => ${REG_STRING}"
+        echo ""
+        echo "[trunk_main]"
+        echo "type=peer"
+        echo "host=${SIP_HOST}"
+        echo "port=${SIP_PORT}"
+        echo "defaultuser=${SIP_USER}"
+        echo "secret=${SIP_PASS}"
+        echo "fromuser=${SIP_USER}"
+        echo "fromdomain=${DOMAIN}"
+        echo "insecure=port,invite"
+        echo "context=inbound"
+        echo "dtmfmode=rfc2833"
+        echo "canreinvite=no"
+        echo "qualify=yes"
+        echo "nat=force_rport,comedia"
+        echo ""
+    } >> /etc/asterisk/sip.conf
 
     bashio::log.info "✓ SIP trunk configured (user: ${SIP_USER})"
+    bashio::log.info "  Registration string: ${REG_STRING}"
 else
     bashio::log.warning "SIP trunk disabled - enable in configuration to make calls"
 fi
