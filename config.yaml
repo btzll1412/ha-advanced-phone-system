@@ -47,13 +47,14 @@ options:
   log_level: "info"
 schema:
   sip_trunk:
-    enabled: bool
-    provider: list(flowroute|twilio|voipms|vonage|bandwidth|custom)
-    host: str
-    port: port
-    username: str?
-    password: password?
-    from_domain: str?
+  enabled: bool
+  provider: list(flowroute|twilio|voipms|vonage|bandwidth|custom)
+  host: str
+  port: port
+  username: str?
+  password: password?
+  from_domain: str?
+  caller_number: str?    # <-- ADD THIS LINE
   extensions:
     - number: str
       name: str
