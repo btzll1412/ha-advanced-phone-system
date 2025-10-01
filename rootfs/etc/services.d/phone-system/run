@@ -12,6 +12,7 @@ SIP_PORT=$(bashio::config 'sip_trunk.port')
 SIP_USER=$(bashio::config 'sip_trunk.username')
 SIP_PASS=$(bashio::config 'sip_trunk.password')
 SIP_DOMAIN=$(bashio::config 'sip_trunk.from_domain')
+SIP_CALLER=$(bashio::config 'sip_trunk.caller_number')
 
 # Create directories
 mkdir -p /var/lib/asterisk/sounds/custom
