@@ -205,7 +205,7 @@ async def generate_tts(text: str) -> Optional[str]:
         if result.returncode == 0 and os.path.exists(temp_path):
             # Convert to 8kHz mono for Asterisk
             convert_result = subprocess.run(
-                ['sox', temp_path, '-r', '8000', '-c', '1', output_path],
+                ['sox', temp_path, '-r', '8000', '-c', '1', '-e', 'mu-law', output_path],
                 capture_output=True,
                 check=False
             )
