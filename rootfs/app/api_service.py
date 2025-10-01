@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse  # Add FileResponse here
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import aiofiles
@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 # Initialize FastAPI
 app = FastAPI(title="Advanced Phone System API", version="1.0.0")
 
-# === ADD THIS NEW SECTION HERE ===
 @app.get("/", response_class=HTMLResponse)
 async def serve_web_ui():
     """Serve the web UI"""
@@ -40,7 +39,6 @@ async def api_info():
         "version": "1.0.0",
         "status": "running"
     }
-# === END NEW SECTION ===
 
 # Configuration paths
 CONFIG_FILE = "/data/options.json"
@@ -187,11 +185,6 @@ def get_db():
     return conn
 
 async def generate_tts(text: str) -> Optional[str]:
-    """Generate TTS audio file using Home Assistant"""
-    try:
-        import requests
-        
-async def generate_tts(text: str) -> Optional[str]:
     """Generate TTS audio file using festival"""
     try:
         import subprocess
@@ -216,10 +209,6 @@ async def generate_tts(text: str) -> Optional[str]:
             error_msg = result.stderr.decode() if result.stderr else "Unknown error"
             logger.error(f"TTS generation failed: {error_msg}")
             return None
-        
-    except Exception as e:
-        logger.error(f"Error generating TTS: {e}")
-        return None
         
     except Exception as e:
         logger.error(f"Error generating TTS: {e}")
@@ -397,15 +386,6 @@ async def startup_event():
     os.makedirs(RECORDINGS_PATH, exist_ok=True)
     os.makedirs(ASTERISK_SOUNDS, exist_ok=True)
     logger.info("✓ API Service started")
-
-@app.get("/")
-async def root():
-    """Root endpoint"""
-    return {
-        "service": "Advanced Phone System API",
-        "version": "1.0.0",
-        "status": "running"
-    }
 
 @app.get("/health")
 async def health():
