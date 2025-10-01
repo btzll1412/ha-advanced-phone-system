@@ -1,52 +1,48 @@
 ARG BUILD_FROM
 FROM $BUILD_FROM
 
-# Install Asterisk and dependencies
+# Install system dependencies
 RUN apk add --no-cache \
-    asterisk \
-    asterisk-sounds-en \
-    asterisk-sounds-moh \
-    asterisk-curl \
-    asterisk-srtp \
     python3 \
     py3-pip \
-    sox \
-    ffmpeg \
+    asterisk \
+    asterisk-sample-config \
+    asterisk-chan-sip \
     curl \
     bash \
-    sqlite
+    festival \
+    festival-dev \
+    && rm -rf /var/cache/apk/*
 
 # Install Python packages
-RUN pip3 install --break-system-packages \
-    fastapi==0.104.1 \
-    uvicorn==0.24.0 \
-    pydantic==2.5.0 \
-    aiofiles==23.2.1 \
-    requests==2.31.0 \
-    jinja2==3.1.2 \
-    python-multipart==0.0.6
+RUN pip3 install --no-cache-dir \
+    fastapi \
+    uvicorn \
+    aiofiles \
+    requests
 
-# Create directories
-RUN mkdir -p \
-    /var/lib/asterisk/sounds/custom \
-    /var/spool/asterisk/outgoing \
-    /app \
-    /data/recordings \
-    /data/database
+# Create necessary directories
+RUN mkdir -p /data/database \
+    && mkdir -p /data/recordings \
+    && mkdir -p /var/lib/asterisk/sounds/custom \
+    && mkdir -p /var/spool/asterisk/outgoing \
+    && chown -R asterisk:asterisk /var/lib/asterisk \
+    && chown -R asterisk:asterisk /var/spool/asterisk
 
 # Copy application files
 COPY rootfs /
 
-# Set permissions
-RUN chmod +x /etc/services.d/phone-system/run && \
-    chown -R asterisk:asterisk /var/lib/asterisk && \
-    chown -R asterisk:asterisk /var/spool/asterisk
+# Set execute permissions
+RUN chmod +x /etc/services.d/phone-system/run
 
 # Expose ports
-EXPOSE 5060/tcp 5060/udp 10000-10099/udp 8088/tcp
+EXPOSE 5060/tcp 5060/udp 8088/tcp
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8088/health || exit 1
 
-WORKDIR /app
+# Labels
+LABEL io.hass.version="1.0.0" \
+      io.hass.type="addon" \
+      io.hass.arch="armhf|armv7|aarch64|amd64|i386"
