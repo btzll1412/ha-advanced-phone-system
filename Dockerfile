@@ -7,11 +7,9 @@ RUN apk add --no-cache \
     py3-pip \
     asterisk \
     asterisk-sample-config \
-    asterisk-chan-sip \
     curl \
     bash \
-    festival \
-    festival-dev \
+    espeak \
     && rm -rf /var/cache/apk/*
 
 # Install Python packages
