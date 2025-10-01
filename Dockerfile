@@ -10,8 +10,8 @@ RUN apk add --no-cache \
     curl \
     bash \
     espeak \
+    sox \
     && rm -rf /var/cache/apk/*
-
 # Install Python packages
 RUN pip3 install --no-cache-dir \
     fastapi \
