@@ -952,6 +952,54 @@ document.getElementById('call-form').addEventListener('submit', async (e) => {
                 showAlert('call-alert', `Error: ${error.message}`, 'error');
             }
         });
+
+
+        async function loadActiveCalls() {
+    const list = document.getElementById('active-calls-list');
+    
+    try {
+        const response = await fetch(`${API_URL}/api/calls/active`);
+        const data = await response.json();
+        
+        if (data.active_calls.length === 0) {
+            list.innerHTML = '<p style="color: #666;">No active calls</p>';
+            return;
+        }
+
+        list.innerHTML = data.active_calls.map(call => {
+            const statusColors = {
+                'initiated': '#ffc107',
+                'ringing': '#17a2b8',
+                'answered': '#28a745'
+            };
+            
+            const statusLabels = {
+                'initiated': 'Dialing',
+                'ringing': 'Ringing',
+                'answered': 'In Progress'
+            };
+            
+            return `
+                <div class="call-history-item" style="background: linear-gradient(90deg, ${statusColors[call.status]}15 0%, transparent 100%);">
+                    <div class="call-info">
+                        <div class="call-number">
+                            ${call.phone_number}
+                            ${call.caller_id ? `<span style="color: #666; font-size: 14px; margin-left: 10px;">as ${call.caller_id}</span>` : ''}
+                        </div>
+                        <div class="call-time">
+                            Duration: ${call.duration}s • Started: ${new Date(call.started_at).toLocaleTimeString()}
+                        </div>
+                    </div>
+                    <span class="status-badge" style="background: ${statusColors[call.status]}; color: white;">
+                        ${statusLabels[call.status]}
+                    </span>
+                </div>
+            `;
+        }).join('');
+    } catch (error) {
+        list.innerHTML = `<p style="color: #dc3545;">Error: ${error.message}</p>`;
+    }
+}
                 // Broadcast Form
         document.getElementById('broadcast-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -1042,6 +1090,8 @@ document.getElementById('call-form').addEventListener('submit', async (e) => {
             }
         });
 
+        
+
         // Load functions
         async function loadDashboard() {
             try {
@@ -1074,6 +1124,9 @@ document.getElementById('call-form').addEventListener('submit', async (e) => {
                         <span class="status-badge status-${call.status}">${call.status}</span>
                     </div>
                 `).join('') || '<p style="color: #666;">No recent activity</p>';
+                
+                // Load active calls
+                await loadActiveCalls();
 
             } catch (error) {
                 console.error('Error loading dashboard:', error);
@@ -1195,13 +1248,21 @@ document.getElementById('call-form').addEventListener('submit', async (e) => {
         // Load dashboard on page load
         loadDashboard();
         
-        // Auto-refresh active data every 10 seconds
-        setInterval(() => {
-            const activeTab = document.querySelector('.tab.active').textContent.toLowerCase().replace(' ', '-');
-            if (activeTab === 'dashboard') loadDashboard();
-            if (activeTab === 'broadcasts') loadBroadcasts();
-            if (activeTab === 'recordings') loadRecordings();
-        }, 10000);
+        // Auto-refresh dashboard every 10 seconds
+setInterval(() => {
+    const activeTab = document.querySelector('.tab.active').textContent.toLowerCase().replace(' ', '-');
+    if (activeTab === 'dashboard') loadDashboard();
+    if (activeTab === 'broadcasts') loadBroadcasts();
+    if (activeTab === 'recordings') loadRecordings();
+}, 10000);
+
+// Refresh active calls more frequently (every 2 seconds)
+setInterval(() => {
+    const activeTab = document.querySelector('.tab.active').textContent.toLowerCase();
+    if (activeTab === 'dashboard') {
+        loadActiveCalls();
+    }
+}, 2000);
     </script>
 </body>
 </html>
