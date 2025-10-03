@@ -131,7 +131,7 @@ chown -R asterisk:asterisk /var/spool/asterisk
 
 # Start Asterisk
 bashio::log.info "Starting Asterisk PBX..."
-asterisk -cvvvvv -dddd &
+asterisk asterisk -f &
 ASTERISK_PID=$!
 
 # Wait for Asterisk to initialize
