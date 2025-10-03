@@ -29,6 +29,7 @@ options:
     username: ""
     password: ""
     from_domain: ""
+    caller_number: ""    # ADD THIS LINE
   extensions:
     - number: "100"
       name: "Home Assistant"
