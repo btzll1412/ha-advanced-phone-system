@@ -914,16 +914,16 @@
         }
 
         // Make Call Form
-        document.getElementById('call-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
+document.getElementById('call-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
     
-            const type = document.getElementById('call-message-type').value;
-            const data = {
-                phone_number: document.getElementById('call-phone').value,
-                caller_id: document.getElementById('call-caller-id').value || null,
-                max_retries: parseInt(document.getElementById('call-retries').value),
-                pre_message_delay: parseInt(document.getElementById('call-pre-delay').value),
-                max_ring_time: parseInt(document.getElementById('call-ring-time').value)
+    const type = document.getElementById('call-message-type').value;
+    const data = {
+        phone_number: document.getElementById('call-phone').value,
+        caller_id: document.getElementById('call-caller-id').value || null,
+        max_retries: parseInt(document.getElementById('call-retries').value),
+        pre_message_delay: parseInt(document.getElementById('call-pre-delay').value),
+        max_ring_time: parseInt(document.getElementById('call-ring-time').value)
             };
 
             if (type === 'tts') {
@@ -946,11 +946,10 @@
                 } else {
                     showAlert('call-alert', 'Failed to make call', 'error');
                 }
-            } catch (error) {
+              } catch (error) {
                 showAlert('call-alert', `Error: ${error.message}`, 'error');
             }
         });
-
                 // Broadcast Form
         document.getElementById('broadcast-form').addEventListener('submit', async (e) => {
             e.preventDefault();
