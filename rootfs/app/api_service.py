@@ -10,10 +10,11 @@ import json
 import uuid
 import logging
 import sqlite3
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -187,15 +188,13 @@ def get_db():
 async def generate_tts(text: str) -> Optional[str]:
     """Generate TTS audio file using espeak"""
     try:
-        import subprocess
-        
         filename = f"tts_{uuid.uuid4().hex}.wav"
         temp_path = f"/tmp/tts_{uuid.uuid4().hex}.wav"
         output_path = os.path.join(ASTERISK_SOUNDS, filename)
         
         logger.info(f"TTS requested: {text[:50]}...")
         
-        # Generate with espeak - try a better voice
+        # Generate with espeak
         result = subprocess.run(
             ['espeak', '-w', temp_path, '-v', 'en+m3', '-s', '160', '-p', '50', text],
             capture_output=True,
@@ -226,6 +225,7 @@ async def generate_tts(text: str) -> Optional[str]:
     except Exception as e:
         logger.error(f"Error generating TTS: {e}")
         return None
+
 def create_call_file(phone_number: str, audio_file: str, caller_id: str = None, 
                     call_id: str = None, max_retries: int = 3):
     """Create Asterisk call file"""
@@ -682,6 +682,167 @@ async def list_groups():
         
     except Exception as e:
         logger.error(f"Error listing groups: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================================================
+# RECORDINGS MANAGEMENT ENDPOINTS
+# ============================================================================
+
+@app.get("/api/recordings")
+async def list_recordings():
+    """List all available recordings"""
+    try:
+        recordings = []
+        recordings_dir = Path(RECORDINGS_PATH)
+        
+        if recordings_dir.exists():
+            for file in recordings_dir.glob('*'):
+                if file.is_file() and file.suffix.lower() in ['.wav', '.gsm', '.mp3', '.ulaw']:
+                    stat = file.stat()
+                    recordings.append({
+                        "filename": file.name,
+                        "display_name": file.stem,
+                        "size": stat.st_size,
+                        "size_mb": round(stat.st_size / 1024 / 1024, 2),
+                        "format": file.suffix[1:].upper(),
+                        "created": datetime.fromtimestamp(stat.st_ctime).isoformat()
+                    })
+        
+        # Sort by creation date, newest first
+        recordings.sort(key=lambda x: x['created'], reverse=True)
+        
+        return {"recordings": recordings}
+        
+    except Exception as e:
+        logger.error(f"Error listing recordings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/recordings/upload")
+async def upload_recording(file: UploadFile = File(...)):
+    """Upload a new recording"""
+    try:
+        # Validate file type
+        allowed_extensions = ['.wav', '.mp3', '.gsm']
+        file_ext = Path(file.filename).suffix.lower()
+        
+        if file_ext not in allowed_extensions:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid file type. Allowed: WAV, MP3, GSM"
+            )
+        
+        # Generate safe filename
+        safe_filename = f"{Path(file.filename).stem}_{uuid.uuid4().hex[:8]}{file_ext}"
+        file_path = os.path.join(RECORDINGS_PATH, safe_filename)
+        
+        # Save uploaded file
+        async with aiofiles.open(file_path, 'wb') as f:
+            content = await file.read()
+            await f.write(content)
+        
+        # Convert to Asterisk-compatible format (8kHz WAV)
+        if file_ext in ['.mp3', '.wav']:
+            output_path = file_path.replace(file_ext, '.wav')
+            result = subprocess.run(
+                ['sox', file_path, '-r', '8000', '-c', '1', '-b', '16', output_path],
+                capture_output=True,
+                check=False
+            )
+            if result.returncode == 0:
+                if file_ext == '.mp3':
+                    os.remove(file_path)  # Remove original MP3
+                    file_path = output_path
+                    safe_filename = safe_filename.replace('.mp3', '.wav')
+            else:
+                logger.error(f"Audio conversion failed: {result.stderr}")
+                raise HTTPException(status_code=500, detail="Audio conversion failed")
+        
+        # Set ownership
+        subprocess.run(['chown', 'asterisk:asterisk', file_path], check=False)
+        
+        logger.info(f"✓ Recording uploaded: {safe_filename}")
+        
+        return {
+            "status": "success",
+            "filename": safe_filename,
+            "message": "Recording uploaded and converted successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading recording: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/recordings/rename")
+async def rename_recording(old_name: str, new_name: str):
+    """Rename a recording"""
+    try:
+        old_path = os.path.join(RECORDINGS_PATH, old_name)
+        
+        # Keep the same extension
+        extension = Path(old_name).suffix
+        if not new_name.endswith(extension):
+            new_name += extension
+        
+        new_path = os.path.join(RECORDINGS_PATH, new_name)
+        
+        if not os.path.exists(old_path):
+            raise HTTPException(status_code=404, detail="Recording not found")
+        
+        if os.path.exists(new_path):
+            raise HTTPException(status_code=400, detail="A recording with that name already exists")
+        
+        os.rename(old_path, new_path)
+        logger.info(f"Recording renamed: {old_name} -> {new_name}")
+        
+        return {"status": "success", "new_name": new_name}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error renaming recording: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/recordings/{filename}")
+async def delete_recording(filename: str):
+    """Delete a recording"""
+    try:
+        file_path = os.path.join(RECORDINGS_PATH, filename)
+        
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="Recording not found")
+        
+        os.remove(file_path)
+        logger.info(f"Recording deleted: {filename}")
+        
+        return {"status": "success", "message": "Recording deleted"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting recording: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/recordings/play/{filename}")
+async def play_recording(filename: str):
+    """Stream a recording for preview"""
+    try:
+        file_path = os.path.join(RECORDINGS_PATH, filename)
+        
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="Recording not found")
+        
+        return FileResponse(
+            file_path,
+            media_type='audio/wav',
+            filename=filename
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error playing recording: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================
