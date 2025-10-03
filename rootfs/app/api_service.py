@@ -238,6 +238,10 @@ def create_call_file(phone_number: str, audio_file: str, caller_id: str = None,
         call_id = uuid.uuid4().hex
     
     config = load_config()
+
+    # Use provided caller_id, fallback to caller_number from config, then "Home Assistant"
+    if not caller_id:
+        caller_id = config.get('sip_trunk', {}).get('caller_number') or 'Home Assistant'
     
     # Build call file content
     call_file_content = f"""Channel: SIP/trunk_main/{phone_number}
