@@ -454,6 +454,19 @@
                     <input type="number" id="call-retries" value="3" min="0" max="10">
                 </div>
 
+                <div class="form-group">
+                    <label>Pre-Message Delay (seconds)</label>
+                    <input type="number" id="call-pre-delay" value="1" min="0" max="10">
+                    <small style="color: #666;">Wait time after answer before playing message</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Max Ring Time (seconds)</label>
+                    <input type="number" id="call-ring-time" value="45" min="15" max="90">
+                    <small style="color: #666;">How long to wait for answer before giving up</small>
+                </div>
+
+
                 <button type="submit" class="btn">Make Call</button>
             </form>
         </div>
@@ -555,6 +568,18 @@
                     <div class="form-group">
                         <label>Concurrent Calls</label>
                         <input type="number" id="broadcast-concurrent" value="5" min="1" max="20">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Pre-Message Delay (seconds)</label>
+                        <input type="number" id="broadcast-pre-delay" value="1" min="0" max="10">
+                        <small style="color: #666;">Wait time after answer before playing message</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Max Ring Time (seconds)</label>
+                        <input type="number" id="broadcast-ring-time" value="45" min="15" max="90">
+                        <small style="color: #666;">How long to wait for answer before giving up</small>
                     </div>
 
                     <button type="submit" class="btn">Start Broadcast</button>
@@ -891,12 +916,14 @@
         // Make Call Form
         document.getElementById('call-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+    
             const type = document.getElementById('call-message-type').value;
             const data = {
                 phone_number: document.getElementById('call-phone').value,
                 caller_id: document.getElementById('call-caller-id').value || null,
-                max_retries: parseInt(document.getElementById('call-retries').value)
+                max_retries: parseInt(document.getElementById('call-retries').value),
+                pre_message_delay: parseInt(document.getElementById('call-pre-delay').value),
+                max_ring_time: parseInt(document.getElementById('call-ring-time').value)
             };
 
             if (type === 'tts') {
@@ -924,17 +951,19 @@
             }
         });
 
-        // Broadcast Form
+                // Broadcast Form
         document.getElementById('broadcast-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+    
             const recipientType = document.getElementById('recipient-type').value;
             const type = document.getElementById('broadcast-message-type').value;
-            
+    
             const data = {
                 name: document.getElementById('broadcast-name').value,
                 concurrent_calls: parseInt(document.getElementById('broadcast-concurrent').value),
-                caller_id: document.getElementById('broadcast-caller-id').value || null
+                caller_id: document.getElementById('broadcast-caller-id').value || null,
+                pre_message_delay: parseInt(document.getElementById('broadcast-pre-delay').value),
+                max_ring_time: parseInt(document.getElementById('broadcast-ring-time').value)
             };
 
             if (recipientType === 'manual') {
