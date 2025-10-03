@@ -719,9 +719,7 @@ async def list_recordings():
 
 @app.post("/api/recordings/upload")
 async def upload_recording(file: UploadFile = File(...)):
-    """Upload a new recording"""
     try:
-        # Validate file type
         allowed_extensions = ['.wav', '.mp3', '.gsm']
         file_ext = Path(file.filename).suffix.lower()
         
@@ -731,8 +729,9 @@ async def upload_recording(file: UploadFile = File(...)):
                 detail=f"Invalid file type. Allowed: WAV, MP3, GSM"
             )
         
-        # Generate safe filename
-        safe_filename = f"{Path(file.filename).stem}_{uuid.uuid4().hex[:8]}{file_ext}"
+        # Generate safe filename - replace spaces with underscores
+        base_name = Path(file.filename).stem.replace(' ', '_')
+        safe_filename = f"{base_name}_{uuid.uuid4().hex[:8]}{file_ext}"
         file_path = os.path.join(RECORDINGS_PATH, safe_filename)
         
         # Save uploaded file
@@ -776,9 +775,11 @@ async def upload_recording(file: UploadFile = File(...)):
 
 @app.post("/api/recordings/rename")
 async def rename_recording(old_name: str, new_name: str):
-    """Rename a recording"""
     try:
         old_path = os.path.join(RECORDINGS_PATH, old_name)
+        
+        # Replace spaces with underscores
+        new_name = new_name.replace(' ', '_')
         
         # Keep the same extension
         extension = Path(old_name).suffix
