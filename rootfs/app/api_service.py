@@ -690,10 +690,9 @@ async def list_groups():
 
 @app.get("/api/recordings")
 async def list_recordings():
-    """List all available recordings"""
     try:
         recordings = []
-        recordings_dir = Path(RECORDINGS_PATH)
+        recordings_dir = Path(ASTERISK_SOUNDS)
         
         if recordings_dir.exists():
             for file in recordings_dir.glob('*'):
@@ -778,7 +777,7 @@ async def upload_recording(file: UploadFile = File(...)):
 @app.post("/api/recordings/rename")
 async def rename_recording(old_name: str, new_name: str):
     try:
-        old_path = os.path.join(RECORDINGS_PATH, old_name)
+        old_path = os.path.join(ASTERISK_SOUNDS, old_name)
         
         # Replace spaces with underscores
         new_name = new_name.replace(' ', '_')
@@ -788,7 +787,7 @@ async def rename_recording(old_name: str, new_name: str):
         if not new_name.endswith(extension):
             new_name += extension
         
-        new_path = os.path.join(RECORDINGS_PATH, new_name)
+        new_path = os.path.join(ASTERISK_SOUNDS, new_name)  # Changed from RECORDINGS_PATH
         
         if not os.path.exists(old_path):
             raise HTTPException(status_code=404, detail="Recording not found")
@@ -806,12 +805,10 @@ async def rename_recording(old_name: str, new_name: str):
     except Exception as e:
         logger.error(f"Error renaming recording: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 @app.delete("/api/recordings/{filename}")
 async def delete_recording(filename: str):
-    """Delete a recording"""
     try:
-        file_path = os.path.join(RECORDINGS_PATH, filename)
+        file_path = os.path.join(ASTERISK_SOUNDS, filename)
         
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="Recording not found")
@@ -829,9 +826,8 @@ async def delete_recording(filename: str):
 
 @app.get("/api/recordings/play/{filename}")
 async def play_recording(filename: str):
-    """Stream a recording for preview"""
     try:
-        file_path = os.path.join(RECORDINGS_PATH, filename)
+        file_path = os.path.join(ASTERISK_SOUNDS, filename)
         
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="Recording not found")
