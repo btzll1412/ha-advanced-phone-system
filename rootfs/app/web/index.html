@@ -141,6 +141,11 @@
             background: #dc3545;
         }
 
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+
         .alert {
             padding: 15px;
             border-radius: 8px;
@@ -158,6 +163,12 @@
             background: #f8d7da;
             color: #721c24;
             border: 1px solid #f5c6cb;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
         }
 
         .broadcast-card {
@@ -297,18 +308,79 @@
             color: #666;
             font-size: 14px;
         }
+
+        .recording-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            border-left: 4px solid #ff6b6b;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .recording-info h4 {
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .recording-meta {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .recording-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #f8f9fa;
+        }
+
+        .upload-area:hover {
+            background: #e8f0fe;
+            border-color: #764ba2;
+        }
+
+        .upload-area.dragover {
+            background: #e8f0fe;
+            border-color: #764ba2;
+        }
+
+        .format-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
+        .format-wav { background: #d4edda; color: #155724; }
+        .format-gsm { background: #d1ecf1; color: #0c5460; }
+        .format-mp3 { background: #fff3cd; color: #856404; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>📞 Advanced Phone System</h1>
-            <p>Manage calls, broadcasts, and contact groups</p>
+            <h1>Advanced Phone System</h1>
+            <p>Manage calls, broadcasts, recordings, and contact groups</p>
         </div>
 
         <div class="tabs">
             <button class="tab active" onclick="showTab('dashboard')">Dashboard</button>
             <button class="tab" onclick="showTab('make-call')">Make Call</button>
+            <button class="tab" onclick="showTab('recordings')">Recordings</button>
             <button class="tab" onclick="showTab('broadcast')">Broadcasts</button>
             <button class="tab" onclick="showTab('groups')">Contact Groups</button>
             <button class="tab" onclick="showTab('history')">Call History</button>
@@ -329,6 +401,10 @@
                 <div style="flex: 1; min-width: 200px; background: #fff3cd; padding: 20px; border-radius: 10px;">
                     <div class="stat-number" id="total-groups">0</div>
                     <div class="stat-label">Contact Groups</div>
+                </div>
+                <div style="flex: 1; min-width: 200px; background: #f8d7da; padding: 20px; border-radius: 10px;">
+                    <div class="stat-number" id="total-recordings">0</div>
+                    <div class="stat-label">Recordings</div>
                 </div>
             </div>
             
@@ -362,8 +438,10 @@
                 </div>
 
                 <div class="form-group hidden" id="call-recording-group">
-                    <label>Recording File *</label>
-                    <input type="text" id="call-recording" placeholder="recording.wav">
+                    <label>Select Recording *</label>
+                    <select id="call-recording-select">
+                        <option value="">Loading recordings...</option>
+                    </select>
                 </div>
 
                 <div class="form-group">
@@ -376,8 +454,41 @@
                     <input type="number" id="call-retries" value="3" min="0" max="10">
                 </div>
 
-                <button type="submit" class="btn">📞 Make Call</button>
+                <button type="submit" class="btn">Make Call</button>
             </form>
+        </div>
+
+        <!-- Recordings Tab -->
+        <div id="recordings-tab" class="content hidden">
+            <h2 style="margin-bottom: 20px; color: #333;">Recording Manager</h2>
+            
+            <div style="margin-bottom: 30px; padding: 20px; background: #f8f9fa; border-radius: 10px;">
+                <h3 style="margin-bottom: 15px;">Upload New Recording</h3>
+                <div id="recording-alert" class="alert"></div>
+                
+                <div class="alert alert-info" style="display: block; margin-bottom: 20px;">
+                    <strong>Supported Formats:</strong> WAV, MP3, GSM<br>
+                    <strong>Best Format:</strong> WAV (8kHz, mono, 16-bit)<br>
+                    <strong>Note:</strong> Files will be automatically converted to Asterisk-compatible format
+                </div>
+                
+                <div class="upload-area" id="upload-area" onclick="document.getElementById('file-input').click()">
+                    <input type="file" id="file-input" accept=".wav,.mp3,.gsm" style="display: none;" onchange="handleFileSelect(event)">
+                    <div style="font-size: 48px; margin-bottom: 10px;">📁</div>
+                    <div style="font-size: 18px; font-weight: 600; color: #333; margin-bottom: 5px;">
+                        Click to upload or drag and drop
+                    </div>
+                    <div style="font-size: 14px; color: #666;">
+                        WAV, MP3, or GSM files
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3 style="color: #333;">Your Recordings</h3>
+                <button class="btn btn-secondary btn-small" onclick="loadRecordings()">Refresh</button>
+            </div>
+            <div id="recordings-list"></div>
         </div>
 
         <!-- Broadcast Tab -->
@@ -430,8 +541,10 @@
                     </div>
 
                     <div class="form-group hidden" id="broadcast-recording-group">
-                        <label>Recording File *</label>
-                        <input type="text" id="broadcast-recording" placeholder="recording.wav">
+                        <label>Select Recording *</label>
+                        <select id="broadcast-recording-select">
+                            <option value="">Loading recordings...</option>
+                        </select>
                     </div>
 
                     <div class="form-group">
@@ -444,12 +557,12 @@
                         <input type="number" id="broadcast-concurrent" value="5" min="1" max="20">
                     </div>
 
-                    <button type="submit" class="btn">📢 Start Broadcast</button>
+                    <button type="submit" class="btn">Start Broadcast</button>
                 </form>
             </div>
 
             <h3 style="margin-bottom: 15px;">Broadcast History</h3>
-            <button class="btn btn-secondary" onclick="loadBroadcasts()" style="margin-bottom: 20px;">🔄 Refresh</button>
+            <button class="btn btn-secondary" onclick="loadBroadcasts()" style="margin-bottom: 20px;">Refresh</button>
             <div id="broadcasts-list"></div>
         </div>
 
@@ -481,19 +594,19 @@
                         <input type="text" id="group-caller-id" placeholder="Home Alert">
                     </div>
 
-                    <button type="submit" class="btn">💾 Create Group</button>
+                    <button type="submit" class="btn">Create Group</button>
                 </form>
             </div>
 
             <h3 style="margin-bottom: 15px;">Saved Groups</h3>
-            <button class="btn btn-secondary" onclick="loadGroups()" style="margin-bottom: 20px;">🔄 Refresh</button>
+            <button class="btn btn-secondary" onclick="loadGroups()" style="margin-bottom: 20px;">Refresh</button>
             <div id="groups-list"></div>
         </div>
 
         <!-- History Tab -->
         <div id="history-tab" class="content hidden">
             <h2 style="margin-bottom: 20px; color: #333;">Call History</h2>
-            <button class="btn btn-secondary" onclick="loadCallHistory()" style="margin-bottom: 20px;">🔄 Refresh</button>
+            <button class="btn btn-secondary" onclick="loadCallHistory()" style="margin-bottom: 20px;">Refresh</button>
             <div id="history-list"></div>
         </div>
     </div>
@@ -513,7 +626,12 @@
             
             // Load data for specific tabs
             if (tabName === 'dashboard') loadDashboard();
-            if (tabName === 'broadcast') loadBroadcasts();
+            if (tabName === 'make-call') loadRecordingsForSelect('call-recording-select');
+            if (tabName === 'recordings') loadRecordings();
+            if (tabName === 'broadcast') {
+                loadBroadcasts();
+                loadRecordingsForSelect('broadcast-recording-select');
+            }
             if (tabName === 'groups') loadGroups();
             if (tabName === 'history') loadCallHistory();
         }
@@ -600,6 +718,176 @@
             setTimeout(() => alert.style.display = 'none', 5000);
         }
 
+        // File upload handling
+        const uploadArea = document.getElementById('upload-area');
+        
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, () => {
+                uploadArea.classList.add('dragover');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, () => {
+                uploadArea.classList.remove('dragover');
+            }, false);
+        });
+
+        uploadArea.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files.length > 0) {
+                uploadFile(files[0]);
+            }
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                uploadFile(file);
+            }
+        }
+
+        async function uploadFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                showAlert('recording-alert', 'Uploading...', 'info');
+                
+                const response = await fetch(`${API_URL}/api/recordings/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    showAlert('recording-alert', result.message, 'success');
+                    setTimeout(loadRecordings, 1000);
+                } else {
+                    const error = await response.json();
+                    showAlert('recording-alert', error.detail || 'Upload failed', 'error');
+                }
+            } catch (error) {
+                showAlert('recording-alert', `Error: ${error.message}`, 'error');
+            }
+            
+            // Reset file input
+            document.getElementById('file-input').value = '';
+        }
+
+        // Recordings management
+        async function loadRecordings() {
+            const list = document.getElementById('recordings-list');
+            list.innerHTML = '<div class="loading"><div class="spinner"></div>Loading recordings...</div>';
+
+            try {
+                const response = await fetch(`${API_URL}/api/recordings`);
+                const data = await response.json();
+                
+                if (data.recordings.length === 0) {
+                    list.innerHTML = '<p style="color: #666; text-align: center;">No recordings yet. Upload one to get started!</p>';
+                    return;
+                }
+
+                list.innerHTML = data.recordings.map(r => `
+                    <div class="recording-card">
+                        <div class="recording-info">
+                            <h4>
+                                ${r.display_name}
+                                <span class="format-badge format-${r.format.toLowerCase()}">${r.format}</span>
+                            </h4>
+                            <div class="recording-meta">
+                                ${r.size_mb} MB • ${new Date(r.created).toLocaleString()}
+                            </div>
+                        </div>
+                        <div class="recording-actions">
+                            <button class="btn btn-secondary btn-small" onclick="playRecording('${r.filename}')">Play</button>
+                            <button class="btn btn-secondary btn-small" onclick="renameRecording('${r.filename}')">Rename</button>
+                            <button class="btn btn-danger btn-small" onclick="deleteRecording('${r.filename}')">Delete</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                list.innerHTML = `<p style="color: #dc3545;">Error: ${error.message}</p>`;
+            }
+        }
+
+        async function loadRecordingsForSelect(selectId) {
+            const select = document.getElementById(selectId);
+            try {
+                const response = await fetch(`${API_URL}/api/recordings`);
+                const data = await response.json();
+                
+                if (data.recordings.length === 0) {
+                    select.innerHTML = '<option value="">No recordings available</option>';
+                    return;
+                }
+
+                select.innerHTML = data.recordings.map(r => 
+                    `<option value="${r.display_name}">${r.display_name} (${r.format})</option>`
+                ).join('');
+            } catch (error) {
+                select.innerHTML = '<option value="">Error loading recordings</option>';
+            }
+        }
+
+        function playRecording(filename) {
+            const audio = new Audio(`${API_URL}/api/recordings/play/${filename}`);
+            audio.play();
+        }
+
+        async function renameRecording(filename) {
+            const newName = prompt('Enter new name (without extension):', filename.split('.')[0]);
+            if (!newName) return;
+
+            try {
+                const response = await fetch(`${API_URL}/api/recordings/rename?old_name=${filename}&new_name=${newName}`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    showAlert('recording-alert', 'Recording renamed successfully!', 'success');
+                    setTimeout(loadRecordings, 1000);
+                } else {
+                    const error = await response.json();
+                    showAlert('recording-alert', error.detail || 'Rename failed', 'error');
+                }
+            } catch (error) {
+                showAlert('recording-alert', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function deleteRecording(filename) {
+            if (!confirm(`Are you sure you want to delete "${filename}"?`)) return;
+
+            try {
+                const response = await fetch(`${API_URL}/api/recordings/${filename}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    showAlert('recording-alert', 'Recording deleted successfully!', 'success');
+                    setTimeout(loadRecordings, 1000);
+                } else {
+                    showAlert('recording-alert', 'Delete failed', 'error');
+                }
+            } catch (error) {
+                showAlert('recording-alert', `Error: ${error.message}`, 'error');
+            }
+        }
+
         // Make Call Form
         document.getElementById('call-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -614,7 +902,7 @@
             if (type === 'tts') {
                 data.tts_text = document.getElementById('call-tts').value;
             } else {
-                data.recording_file = document.getElementById('call-recording').value;
+                data.recording_file = document.getElementById('call-recording-select').value;
             }
 
             try {
@@ -662,7 +950,7 @@
             if (type === 'tts') {
                 data.tts_text = document.getElementById('broadcast-tts').value;
             } else {
-                data.recording_file = document.getElementById('broadcast-recording').value;
+                data.recording_file = document.getElementById('broadcast-recording-select').value;
             }
 
             try {
@@ -727,20 +1015,23 @@
         // Load functions
         async function loadDashboard() {
             try {
-                const [callsRes, broadcastsRes, groupsRes] = await Promise.all([
+                const [callsRes, broadcastsRes, groupsRes, recordingsRes] = await Promise.all([
                     fetch(`${API_URL}/api/call_history?limit=10`),
                     fetch(`${API_URL}/api/broadcasts`),
-                    fetch(`${API_URL}/api/groups`)
+                    fetch(`${API_URL}/api/groups`),
+                    fetch(`${API_URL}/api/recordings`)
                 ]);
 
                 const calls = await callsRes.json();
                 const broadcasts = await broadcastsRes.json();
                 const groups = await groupsRes.json();
+                const recordings = await recordingsRes.json();
 
                 document.getElementById('total-calls').textContent = calls.calls.length;
                 document.getElementById('active-broadcasts').textContent = 
                     broadcasts.broadcasts.filter(b => b.status === 'processing').length;
                 document.getElementById('total-groups').textContent = groups.groups.length;
+                document.getElementById('total-recordings').textContent = recordings.recordings.length;
 
                 // Recent activity
                 const activity = document.getElementById('recent-activity');
@@ -829,7 +1120,8 @@
                         ${g.caller_id ? `<div style="color: #666; font-size: 14px; margin-top: 5px;">Caller ID: ${g.caller_id}</div>` : ''}
                     </div>
                 `).join('');
-              // Update group select dropdown
+
+                // Update group select dropdown
                 select.innerHTML = data.groups.map(g => 
                     `<option value="${g.name}">${g.name} (${g.member_count} members)</option>`
                 ).join('');
@@ -878,6 +1170,7 @@
             const activeTab = document.querySelector('.tab.active').textContent.toLowerCase().replace(' ', '-');
             if (activeTab === 'dashboard') loadDashboard();
             if (activeTab === 'broadcasts') loadBroadcasts();
+            if (activeTab === 'recordings') loadRecordings();
         }, 10000);
     </script>
 </body>
