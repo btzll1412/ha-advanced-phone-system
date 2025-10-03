@@ -732,27 +732,27 @@ async def upload_recording(file: UploadFile = File(...)):
         base_name = Path(file.filename).stem.replace(' ', '_')
         safe_filename = f"{base_name}_{uuid.uuid4().hex[:8]}{file_ext}"
         
-        # CHANGE THIS: Save to Asterisk sounds directory, not recordings path
-        file_path = os.path.join(ASTERISK_SOUNDS, safe_filename)  # Changed from RECORDINGS_PATH
+        # Save to Asterisk sounds directory
+        file_path = os.path.join(ASTERISK_SOUNDS, safe_filename)
         
         # Save uploaded file
         async with aiofiles.open(file_path, 'wb') as f:
             content = await file.read()
             await f.write(content)
         
-        # Convert to Asterisk-compatible format (8kHz WAV)
+        # Convert to Asterisk-compatible format (8kHz, 8-bit unsigned WAV)
         if file_ext in ['.mp3', '.wav']:
-            output_path = file_path.replace(file_ext, '.wav')
+            output_path = file_path.replace(file_ext, '_temp.wav')
             result = subprocess.run(
-                ['sox', file_path, '-r', '8000', '-c', '1', '-b', '16', output_path],
+                ['sox', file_path, '-r', '8000', '-c', '1', '-e', 'unsigned', '-b', '8', output_path],
                 capture_output=True,
                 check=False
             )
             if result.returncode == 0:
-                if file_ext == '.mp3':
-                    os.remove(file_path)
-                    file_path = output_path
-                    safe_filename = safe_filename.replace('.mp3', '.wav')
+                os.remove(file_path)
+                os.rename(output_path, file_path.replace(file_ext, '.wav'))
+                safe_filename = safe_filename.replace(file_ext, '.wav')
+                file_path = file_path.replace(file_ext, '.wav')
             else:
                 logger.error(f"Audio conversion failed: {result.stderr}")
                 raise HTTPException(status_code=500, detail="Audio conversion failed")
@@ -773,7 +773,6 @@ async def upload_recording(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Error uploading recording: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 @app.post("/api/recordings/rename")
 async def rename_recording(old_name: str, new_name: str):
     try:
