@@ -740,11 +740,11 @@ async def upload_recording(file: UploadFile = File(...)):
             content = await file.read()
             await f.write(content)
         
-        # Convert to Asterisk-compatible format (8kHz, 8-bit unsigned WAV)
+        # Convert to Asterisk-compatible format (8kHz, 16-bit signed WAV)
         if file_ext in ['.mp3', '.wav']:
             output_path = file_path.replace(file_ext, '_temp.wav')
             result = subprocess.run(
-                ['sox', file_path, '-r', '8000', '-c', '1', '-e', 'unsigned', '-b', '8', output_path],
+                ['sox', file_path, '-r', '8000', '-c', '1', '-b', '16', '-e', 'signed-integer', output_path],
                 capture_output=True,
                 check=False
             )
