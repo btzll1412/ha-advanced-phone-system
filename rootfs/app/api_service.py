@@ -197,7 +197,7 @@ async def generate_tts(text: str) -> Optional[str]:
         
         # Generate with espeak - try a better voice
         result = subprocess.run(
-            ['espeak', '-w', temp_path, '-v', 'en+f3', '-s', '160', '-p', '50', text],
+            ['espeak', '-w', temp_path, '-v', 'en+m3', '-s', '160', '-p', '50', text],
             capture_output=True,
             check=False
         )
