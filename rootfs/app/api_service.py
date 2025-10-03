@@ -189,23 +189,23 @@ async def generate_tts(text: str) -> Optional[str]:
     try:
         import subprocess
         
-        filename = f"tts_{uuid.uuid4().hex}.wav"  # Changed to WAV
+        filename = f"tts_{uuid.uuid4().hex}.wav"
         temp_path = f"/tmp/tts_{uuid.uuid4().hex}.wav"
         output_path = os.path.join(ASTERISK_SOUNDS, filename)
         
         logger.info(f"TTS requested: {text[:50]}...")
         
-        # Generate with espeak
+        # Generate with espeak - try a better voice
         result = subprocess.run(
-            ['espeak', '-w', temp_path, '-v', 'en+m3', '-s', '150', text],
+            ['espeak', '-w', temp_path, '-v', 'en+f3', '-s', '160', '-p', '50', text],
             capture_output=True,
             check=False
         )
         
         if result.returncode == 0 and os.path.exists(temp_path):
-            # Convert to higher quality WAV (16kHz instead of 8kHz)
+            # Convert to 8kHz WAV (telephony standard) with 16-bit quality
             convert_result = subprocess.run(
-                ['sox', temp_path, '-r', '16000', '-c', '1', '-b', '16', output_path],
+                ['sox', temp_path, '-r', '8000', '-c', '1', '-b', '16', output_path],
                 capture_output=True,
                 check=False
             )
@@ -215,7 +215,7 @@ async def generate_tts(text: str) -> Optional[str]:
             
             if convert_result.returncode == 0 and os.path.exists(output_path):
                 logger.info(f"✓ TTS file created: {filename}")
-                return filename.replace('.wav', '')  # Return without extension
+                return filename.replace('.wav', '')
             else:
                 logger.error(f"Audio conversion failed")
                 return None
