@@ -563,6 +563,76 @@ async def update_call_status(call_id: str, status: str):
         logger.error(f"Error updating call status: {e}")
         return {"status": "error", "message": str(e)}
 
+@app.post("/api/call_status/ringing")
+async def update_call_ringing(call_id: str):
+    """Mark call as ringing"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE call_history 
+            SET status = 'ringing'
+            WHERE call_id = ?
+        ''', (call_id,))
+        conn.commit()
+        conn.close()
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Error updating ringing status: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/call_status/answered")
+async def update_call_answered(call_id: str):
+    """Mark call as answered"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE call_history 
+            SET status = 'answered'
+            WHERE call_id = ?
+        ''', (call_id,))
+        conn.commit()
+        conn.close()
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Error updating answered status: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/calls/active")
+async def get_active_calls():
+    """Get currently active calls"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT call_id, phone_number, caller_id, status, audio_file,
+                   strftime('%s', 'now') - strftime('%s', started_at) as duration_seconds,
+                   started_at
+            FROM call_history
+            WHERE status IN ('initiated', 'ringing', 'answered')
+            ORDER BY started_at DESC
+        ''')
+        
+        active_calls = []
+        for row in cursor.fetchall():
+            active_calls.append({
+                "call_id": row[0],
+                "phone_number": row[1],
+                "caller_id": row[2],
+                "status": row[3],
+                "audio_file": row[4],
+                "duration": row[5],
+                "started_at": row[6]
+            })
+        
+        conn.close()
+        return {"active_calls": active_calls}
+        
+    except Exception as e:
+        logger.error(f"Error getting active calls: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/broadcasts")
 async def list_broadcasts():
     """List all broadcasts"""
