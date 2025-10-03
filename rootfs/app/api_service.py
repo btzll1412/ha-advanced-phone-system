@@ -243,6 +243,10 @@ def create_call_file(phone_number: str, audio_file: str, caller_id: str = None,
     if not caller_id or caller_id.strip() == "":
         caller_id = config.get('sip_trunk', {}).get('caller_number') or 'Home Assistant'
     
+    # Add logging to debug
+    logger.info(f"Caller ID being used: {caller_id}")
+    logger.info(f"Config caller_number: {config.get('sip_trunk', {}).get('caller_number')}")
+    
     # Build call file content
     call_file_content = f"""Channel: SIP/trunk_main/{phone_number}
 CallerID: {caller_id}
@@ -258,6 +262,9 @@ Setvar: PHONE_NUMBER={phone_number}
 Setvar: PRE_MESSAGE_DELAY={pre_message_delay}
 """
     
+    # Log the actual call file content
+    logger.info(f"Call file content:\n{call_file_content}")
+    
     # Write to temp file first
     temp_file = f"/tmp/call_{call_id}.call"
     with open(temp_file, 'w') as f:
@@ -269,7 +276,6 @@ Setvar: PRE_MESSAGE_DELAY={pre_message_delay}
     
     logger.info(f"Call file created: {call_id} -> {phone_number}")
     return call_id
-
 def save_call_to_db(call_id: str, phone_number: str, audio_file: str, 
                    caller_id: str = None, group_name: str = None, 
                    broadcast_id: str = None):
