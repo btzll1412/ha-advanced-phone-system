@@ -66,7 +66,7 @@ if [ "$SIP_ENABLED" = "true" ]; then
     # Build registration string separately to avoid escape issues
     REG_STRING="${SIP_USER}:${SIP_PASS}@${SIP_HOST}:${SIP_PORT}/${SIP_USER}"
     
-    # Write SIP trunk config
+    # Write SIP trunk config - removed fromuser line
     {
         echo ""
         echo "; SIP Trunk Registration"
@@ -78,7 +78,6 @@ if [ "$SIP_ENABLED" = "true" ]; then
         echo "port=${SIP_PORT}"
         echo "defaultuser=${SIP_USER}"
         echo "secret=${SIP_PASS}"
-        echo "fromuser=${SIP_CALLER:-$SIP_USER}"
         echo "fromdomain=${DOMAIN}"
         echo "insecure=port,invite"
         echo "context=inbound"
@@ -93,6 +92,7 @@ if [ "$SIP_ENABLED" = "true" ]; then
 else
     bashio::log.warning "SIP trunk disabled - enable in configuration to make calls"
 fi
+
 # Add extensions
 bashio::log.info "Configuring extensions..."
 EXTENSION_COUNT=$(bashio::config 'extensions|length')
@@ -129,9 +129,15 @@ chown -R asterisk:asterisk /etc/asterisk
 chown -R asterisk:asterisk /var/lib/asterisk
 chown -R asterisk:asterisk /var/spool/asterisk
 
+# Kill any existing Asterisk processes
+bashio::log.info "Cleaning up any existing Asterisk processes..."
+pkill -9 asterisk 2>/dev/null || true
+rm -f /var/run/asterisk/asterisk.ctl 2>/dev/null || true
+sleep 2
+
 # Start Asterisk
 bashio::log.info "Starting Asterisk PBX..."
-asterisk asterisk -f &
+asterisk -f &
 ASTERISK_PID=$!
 
 # Wait for Asterisk to initialize
