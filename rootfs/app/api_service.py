@@ -337,23 +337,25 @@ async def process_broadcast(broadcast_id: str, request: BroadcastRequest):
     semaphore = asyncio.Semaphore(request.concurrent_calls)
     
     async def make_call(phone_number: str):
-        async with semaphore:
-            try:
-                call_id = create_call_file(
-                    phone_number, 
-                    audio_file, 
-                    request.caller_id,
-                    call_id=f"{broadcast_id}_{uuid.uuid4().hex[:8]}"
-                )
-                
-                save_call_to_db(
-                    call_id, 
-                    phone_number, 
-                    audio_file, 
-                    request.caller_id,
-                    request.group_name,
-                    broadcast_id
-                )
+    async with semaphore:
+        try:
+            call_id = create_call_file(
+                phone_number, 
+                audio_file, 
+                request.caller_id,
+                call_id=f"{broadcast_id}_{uuid.uuid4().hex[:8]}",
+                pre_message_delay=request.pre_message_delay,
+                max_ring_time=request.max_ring_time
+            )
+            
+            save_call_to_db(
+                call_id, 
+                phone_number, 
+                audio_file, 
+                request.caller_id,
+                request.group_name,
+                broadcast_id
+            )
                 
                 cursor.execute('''
                     UPDATE broadcasts 
@@ -433,7 +435,9 @@ async def make_call(request: CallRequest, background_tasks: BackgroundTasks):
             request.phone_number,
             audio_file,
             request.caller_id,
-            max_retries=request.max_retries
+            max_retries=request.max_retries,
+            pre_message_delay=request.pre_message_delay,
+            max_ring_time=request.max_ring_time
         )
         
         # Save to database
