@@ -132,6 +132,8 @@ class CallRequest(BaseModel):
     tts_text: Optional[str] = None
     caller_id: Optional[str] = None
     max_retries: int = 3
+    pre_message_delay: int = 1  # Default: 1 second
+    max_ring_time: int = 45  # Default: 45 seconds
 
 class BroadcastRequest(BaseModel):
     name: str
@@ -142,6 +144,8 @@ class BroadcastRequest(BaseModel):
     tts_text: Optional[str] = None
     caller_id: Optional[str] = None
     concurrent_calls: int = 5
+    pre_message_delay: int = 1  # Default: 1 second
+    max_ring_time: int = 45  # Default: 45 seconds
 
 class ContactGroup(BaseModel):
     name: str
@@ -227,7 +231,8 @@ async def generate_tts(text: str) -> Optional[str]:
         return None
 
 def create_call_file(phone_number: str, audio_file: str, caller_id: str = None, 
-                    call_id: str = None, max_retries: int = 3):
+                    call_id: str = None, max_retries: int = 3, 
+                    pre_message_delay: int = 1, max_ring_time: int = 45):
     """Create Asterisk call file"""
     if not call_id:
         call_id = uuid.uuid4().hex
@@ -239,14 +244,16 @@ def create_call_file(phone_number: str, audio_file: str, caller_id: str = None,
 CallerID: {caller_id or 'Home Assistant'}
 MaxRetries: {max_retries}
 RetryTime: 300
-WaitTime: 45
+WaitTime: {max_ring_time}
 Context: outbound-playback
 Extension: s
 Priority: 1
 Setvar: AUDIO_FILE={audio_file}
 Setvar: CALL_ID={call_id}
 Setvar: PHONE_NUMBER={phone_number}
+Setvar: PRE_MESSAGE_DELAY={pre_message_delay}
 """
+
     
     # Write to temp file first
     temp_file = f"/tmp/call_{call_id}.call"
