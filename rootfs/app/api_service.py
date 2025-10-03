@@ -248,20 +248,20 @@ def create_call_file(phone_number: str, audio_file: str, caller_id: str = None,
     logger.info(f"Config caller_number: {config.get('sip_trunk', {}).get('caller_number')}")
     
     # Build call file content
-    call_file_content = f"""Channel: SIP/trunk_main/{phone_number}
-    MaxRetries: {max_retries}
-    RetryTime: 300
-    WaitTime: {max_ring_time}
-    Context: outbound-playback
-    Extension: s
-    Priority: 1
-    Variable: __SIPFROMUSER={caller_id}
-    Setvar: AUDIO_FILE={audio_file}
-    Setvar: CALL_ID={call_id}
-    Setvar: PHONE_NUMBER={phone_number}
-    Setvar: PRE_MESSAGE_DELAY={pre_message_delay}
-    Setvar: CUSTOM_CALLERID={caller_id}
-    """
+call_file_content = f"""Channel: SIP/trunk_main/{phone_number}
+MaxRetries: {max_retries}
+RetryTime: 300
+WaitTime: {max_ring_time}
+Context: outbound-playback
+Extension: s
+Priority: 1
+Variable: __SIPFROMUSER={caller_id}
+Setvar: AUDIO_FILE={audio_file}
+Setvar: CALL_ID={call_id}
+Setvar: PHONE_NUMBER={phone_number}
+Setvar: PRE_MESSAGE_DELAY={pre_message_delay}
+Setvar: CUSTOM_CALLERID={caller_id}
+"""
     
     # Log the actual call file content
     logger.info(f"Call file content:\n{call_file_content}")
