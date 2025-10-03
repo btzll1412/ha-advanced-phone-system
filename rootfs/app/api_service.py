@@ -356,24 +356,24 @@ async def process_broadcast(broadcast_id: str, request: BroadcastRequest):
                 request.group_name,
                 broadcast_id
             )
-                
-                cursor.execute('''
-                    UPDATE broadcasts 
-                    SET in_progress = in_progress + 1 
-                    WHERE broadcast_id = ?
-                ''', (broadcast_id,))
-                conn.commit()
-                
-                await asyncio.sleep(2)  # Delay between calls
-                
-            except Exception as e:
-                logger.error(f"Error calling {phone_number}: {e}")
-                cursor.execute('''
-                    UPDATE broadcasts 
-                    SET failed = failed + 1 
-                    WHERE broadcast_id = ?
-                ''', (broadcast_id,))
-                conn.commit()
+            
+            cursor.execute('''
+                UPDATE broadcasts 
+                SET in_progress = in_progress + 1 
+                WHERE broadcast_id = ?
+            ''', (broadcast_id,))
+            conn.commit()
+            
+            await asyncio.sleep(2)
+            
+        except Exception as e:
+            logger.error(f"Error calling {phone_number}: {e}")
+            cursor.execute('''
+                UPDATE broadcasts 
+                SET failed = failed + 1 
+                WHERE broadcast_id = ?
+            ''', (broadcast_id,))
+            conn.commit()
     
     # Execute all calls
     tasks = [make_call(number) for number in phone_numbers]
