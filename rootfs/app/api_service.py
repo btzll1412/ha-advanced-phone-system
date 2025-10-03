@@ -732,7 +732,9 @@ async def upload_recording(file: UploadFile = File(...)):
         # Generate safe filename - replace spaces with underscores
         base_name = Path(file.filename).stem.replace(' ', '_')
         safe_filename = f"{base_name}_{uuid.uuid4().hex[:8]}{file_ext}"
-        file_path = os.path.join(RECORDINGS_PATH, safe_filename)
+        
+        # CHANGE THIS: Save to Asterisk sounds directory, not recordings path
+        file_path = os.path.join(ASTERISK_SOUNDS, safe_filename)  # Changed from RECORDINGS_PATH
         
         # Save uploaded file
         async with aiofiles.open(file_path, 'wb') as f:
@@ -749,7 +751,7 @@ async def upload_recording(file: UploadFile = File(...)):
             )
             if result.returncode == 0:
                 if file_ext == '.mp3':
-                    os.remove(file_path)  # Remove original MP3
+                    os.remove(file_path)
                     file_path = output_path
                     safe_filename = safe_filename.replace('.mp3', '.wav')
             else:
