@@ -238,14 +238,14 @@ def create_call_file(phone_number: str, audio_file: str, caller_id: str = None,
         call_id = uuid.uuid4().hex
     
     config = load_config()
-
-    # Use provided caller_id, fallback to caller_number from config, then "Home Assistant"
-    if not caller_id:
+    
+    # Use provided caller_id (if not empty), fallback to config, then "Home Assistant"
+    if not caller_id or caller_id.strip() == "":
         caller_id = config.get('sip_trunk', {}).get('caller_number') or 'Home Assistant'
     
     # Build call file content
     call_file_content = f"""Channel: SIP/trunk_main/{phone_number}
-CallerID: {caller_id or 'Home Assistant'}
+CallerID: {caller_id}
 MaxRetries: {max_retries}
 RetryTime: 300
 WaitTime: {max_ring_time}
@@ -257,7 +257,6 @@ Setvar: CALL_ID={call_id}
 Setvar: PHONE_NUMBER={phone_number}
 Setvar: PRE_MESSAGE_DELAY={pre_message_delay}
 """
-
     
     # Write to temp file first
     temp_file = f"/tmp/call_{call_id}.call"
