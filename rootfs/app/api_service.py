@@ -189,37 +189,33 @@ async def generate_tts(text: str) -> Optional[str]:
     try:
         import subprocess
         
-        filename = f"tts_{uuid.uuid4().hex}.gsm"
+        filename = f"tts_{uuid.uuid4().hex}.wav"  # Changed to WAV
         temp_path = f"/tmp/tts_{uuid.uuid4().hex}.wav"
         output_path = os.path.join(ASTERISK_SOUNDS, filename)
         
         logger.info(f"TTS requested: {text[:50]}...")
         
-        # Use espeak to generate audio to temp file
+        # Generate with espeak
         result = subprocess.run(
-            ['espeak', '-w', temp_path, '-v', 'en-us', '-s', '150', text],
+            ['espeak', '-w', temp_path, '-v', 'en+m3', '-s', '150', text],
             capture_output=True,
             check=False
         )
         
         if result.returncode == 0 and os.path.exists(temp_path):
-            # Convert to GSM format for Asterisk
+            # Convert to higher quality WAV (16kHz instead of 8kHz)
             convert_result = subprocess.run(
-                ['sox', temp_path, '-r', '8000', '-c', '1', output_path],
+                ['sox', temp_path, '-r', '16000', '-c', '1', '-b', '16', output_path],
                 capture_output=True,
                 check=False
             )
             
-            # Set proper ownership
             subprocess.run(['chown', 'asterisk:asterisk', output_path], check=False)
-            
-            # Clean up temp file
             os.remove(temp_path)
             
             if convert_result.returncode == 0 and os.path.exists(output_path):
                 logger.info(f"✓ TTS file created: {filename}")
-                # Return WITHOUT extension - Asterisk adds it automatically
-                return filename.replace('.gsm', '')
+                return filename.replace('.wav', '')  # Return without extension
             else:
                 logger.error(f"Audio conversion failed")
                 return None
