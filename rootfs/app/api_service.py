@@ -247,8 +247,8 @@ def create_call_file(phone_number: str, audio_file: str, caller_id: str = None,
     logger.info(f"Caller ID being used: {caller_id}")
     logger.info(f"Config caller_number: {config.get('sip_trunk', {}).get('caller_number')}")
     
-    # Build call file content
-call_file_content = f"""Channel: SIP/trunk_main/{phone_number}
+    # Build call file content - NO INDENTATION IN THE STRING
+    call_file_content = f"""Channel: SIP/trunk_main/{phone_number}
 MaxRetries: {max_retries}
 RetryTime: 300
 WaitTime: {max_ring_time}
