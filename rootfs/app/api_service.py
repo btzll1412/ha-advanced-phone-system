@@ -337,43 +337,43 @@ async def process_broadcast(broadcast_id: str, request: BroadcastRequest):
     semaphore = asyncio.Semaphore(request.concurrent_calls)
     
     async def make_call(phone_number: str):
-    async with semaphore:
-        try:
-            call_id = create_call_file(
-                phone_number, 
-                audio_file, 
-                request.caller_id,
-                call_id=f"{broadcast_id}_{uuid.uuid4().hex[:8]}",
-                pre_message_delay=request.pre_message_delay,
-                max_ring_time=request.max_ring_time
-            )
-            
-            save_call_to_db(
-                call_id, 
-                phone_number, 
-                audio_file, 
-                request.caller_id,
-                request.group_name,
-                broadcast_id
-            )
-            
-            cursor.execute('''
-                UPDATE broadcasts 
-                SET in_progress = in_progress + 1 
-                WHERE broadcast_id = ?
-            ''', (broadcast_id,))
-            conn.commit()
-            
-            await asyncio.sleep(2)
-            
-        except Exception as e:
-            logger.error(f"Error calling {phone_number}: {e}")
-            cursor.execute('''
-                UPDATE broadcasts 
-                SET failed = failed + 1 
-                WHERE broadcast_id = ?
-            ''', (broadcast_id,))
-            conn.commit()
+        async with semaphore:
+            try:
+                call_id = create_call_file(
+                    phone_number, 
+                    audio_file, 
+                    request.caller_id,
+                    call_id=f"{broadcast_id}_{uuid.uuid4().hex[:8]}",
+                    pre_message_delay=request.pre_message_delay,
+                    max_ring_time=request.max_ring_time
+                )
+                
+                save_call_to_db(
+                    call_id, 
+                    phone_number, 
+                    audio_file, 
+                    request.caller_id,
+                    request.group_name,
+                    broadcast_id
+                )
+                
+                cursor.execute('''
+                    UPDATE broadcasts 
+                    SET in_progress = in_progress + 1 
+                    WHERE broadcast_id = ?
+                ''', (broadcast_id,))
+                conn.commit()
+                
+                await asyncio.sleep(2)
+                
+            except Exception as e:
+                logger.error(f"Error calling {phone_number}: {e}")
+                cursor.execute('''
+                    UPDATE broadcasts 
+                    SET failed = failed + 1 
+                    WHERE broadcast_id = ?
+                ''', (broadcast_id,))
+                conn.commit()
     
     # Execute all calls
     tasks = [make_call(number) for number in phone_numbers]
