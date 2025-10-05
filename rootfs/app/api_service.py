@@ -913,38 +913,38 @@ async def hangup_call(call_id: str):
             print(error_msg, flush=True)
         
         # Step 2: Try to hangup active channels - UPDATED to catch ringing
-result = subprocess.run(
-    ['asterisk', '-rx', 'core show channels concise'],
-    capture_output=True,
-    text=True,
-    check=False
-)
+        result = subprocess.run(
+            ['asterisk', '-rx', 'core show channels concise'],
+            capture_output=True,
+            text=True,
+            check=False
+        )
 
-logger.info(f"Channels output: {result.stdout}")
+        logger.info(f"Channels output: {result.stdout}")
 
-channel = None
-for line in result.stdout.split('\n'):
-    # Match ANY trunk_main channel, regardless of state
-    if 'trunk_main' in line and 'outbound-playback' in line:
-        parts = line.split('!')
-        if parts:
-            channel = parts[0]
-            state = parts[4] if len(parts) > 4 else 'Unknown'
-            logger.info(f"Found channel: {channel} (State: {state})")
-            print(f"FOUND CHANNEL: {channel} (State: {state})", flush=True)
-            break
+        channel = None
+        for line in result.stdout.split('\n'):
+            # Match ANY trunk_main channel, regardless of state
+            if 'trunk_main' in line and 'outbound-playback' in line:
+                parts = line.split('!')
+                if parts:
+                    channel = parts[0]
+                    state = parts[4] if len(parts) > 4 else 'Unknown'
+                    logger.info(f"Found channel: {channel} (State: {state})")
+                    print(f"FOUND CHANNEL: {channel} (State: {state})", flush=True)
+                    break
 
-if channel:
-    hangup_result = subprocess.run(
-        ['asterisk', '-rx', f'channel request hangup {channel}'],
-        capture_output=True,
-        text=True,
-        check=False
-    )
+        if channel:
+            hangup_result = subprocess.run(
+                ['asterisk', '-rx', f'channel request hangup {channel}'],
+                capture_output=True,
+                text=True,
+                check=False
+            )
     
-    logger.info(f"Hangup command: channel request hangup {channel}")
-    logger.info(f"Hangup result: {hangup_result.stdout}")
-    print(f"Hangup executed on {channel}: {hangup_result.stdout}", flush=True)
+            logger.info(f"Hangup command: channel request hangup {channel}")
+            logger.info(f"Hangup result: {hangup_result.stdout}")
+            print(f"Hangup executed on {channel}: {hangup_result.stdout}", flush=True)
         
         # Step 3: Update database
         conn = get_db()
