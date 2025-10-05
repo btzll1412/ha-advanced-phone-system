@@ -679,7 +679,7 @@
     <script>
         const API_URL = window.location.origin;
         let phoneNumbers = [];
-        let groupPhoneNumbers = [];
+        let groupContacts = [];
 
         // Tab switching
         function showTab(tabName) {
@@ -747,32 +747,69 @@
             `).join('');
         }
 
-        // Group phone number management
-        function addGroupPhone() {
-            const input = document.getElementById('group-phone-input');
-            const phone = input.value.trim();
-            
-            if (phone && !groupPhoneNumbers.includes(phone)) {
-                groupPhoneNumbers.push(phone);
-                updateGroupPhoneList();
-                input.value = '';
-            }
-        }
+        // Group contact management
+                function addGroupContact() {
+                    const nameInput = document.getElementById('contact-name-input');
+                    const phoneInput = document.getElementById('contact-phone-input');
+    
+                    const name = nameInput.value.trim();
+                    const phone = phoneInput.value.trim();
+    
+                    if (!name || !phone) {
+                        showAlert('group-alert', 'Please enter both name and phone number', 'error');
+                        return;
+                    }
+    
+                    if (groupContacts.some(c => c.phone_number === phone)) {
+                        showAlert('group-alert', 'This phone number is already in the list', 'error');
+                        return;
+                    }
+    
+                    groupContacts.push({ name: name, phone_number: phone });
+                    updateGroupContactsList();
+    
+                    nameInput.value = '';
+                    phoneInput.value = '';
+                    nameInput.focus();
+                }
 
-        function removeGroupPhone(phone) {
-            groupPhoneNumbers = groupPhoneNumbers.filter(p => p !== phone);
-            updateGroupPhoneList();
-        }
+                 function removeGroupContact(index) {
+                    groupContacts.splice(index, 1);
+                    updateGroupContactsList();
+                }
 
-        function updateGroupPhoneList() {
-            const list = document.getElementById('group-phone-list');
-            list.innerHTML = groupPhoneNumbers.map(phone => `
-                <div class="phone-tag">
-                    ${phone}
-                    <button onclick="removeGroupPhone('${phone}')">×</button>
-                </div>
-            `).join('');
-        }
+                function editGroupContact(index) {
+                    const contact = groupContacts[index];
+                    const newName = prompt('Edit contact name:', contact.name);
+                    const newPhone = prompt('Edit phone number:', contact.phone_number);
+    
+                    if (newName && newPhone) {
+                        groupContacts[index] = { name: newName, phone_number: newPhone };
+                        updateGroupContactsList();
+                    }
+                }
+
+                function updateGroupContactsList() {
+                    const list = document.getElementById('group-contacts-list');
+    
+                    if (groupContacts.length === 0) {
+                        list.innerHTML = '<p style="color: #666; font-size: 14px; margin-top: 10px;">No contacts added yet</p>';
+                        return;
+                    }
+    
+                    list.innerHTML = groupContacts.map((contact, index) => `
+                        <div class="contact-card">
+                            <div class="contact-info">
+                                <div class="contact-name">${contact.name}</div>
+                                <div class="contact-phone">${contact.phone_number}</div>
+                            </div>
+                            <div class="contact-actions">
+                                <button class="btn btn-secondary btn-small" onclick="editGroupContact(${index})">Edit</button>
+                     <button class="btn btn-danger btn-small" onclick="removeGroupContact(${index})">Delete</button>
+                            </div>
+                        </div>
+                    `).join('');
+                }
 
         // Alert functions
         function showAlert(elementId, message, type) {
@@ -1299,14 +1336,14 @@ setInterval(() => {
 async function createGroupSubmit(e) {
     e.preventDefault();
     
-    if (groupPhoneNumbers.length === 0) {
-        showAlert('group-alert', 'Please add at least one phone number', 'error');
+    if (groupContacts.length === 0) {
+        showAlert('group-alert', 'Please add at least one contact', 'error');
         return;
     }
 
     const data = {
         name: document.getElementById('group-name').value,
-        phone_numbers: groupPhoneNumbers,
+        contacts: groupContacts,
         caller_id: document.getElementById('group-caller-id').value || null
     };
 
@@ -1320,8 +1357,8 @@ async function createGroupSubmit(e) {
         if (response.ok) {
             showAlert('group-alert', 'Group created successfully!', 'success');
             e.target.reset();
-            groupPhoneNumbers = [];
-            updateGroupPhoneList();
+            groupContacts = [];
+            updateGroupContactsList();
             setTimeout(loadGroups, 1000);
         } else {
             const error = await response.json();
@@ -1331,7 +1368,6 @@ async function createGroupSubmit(e) {
         showAlert('group-alert', `Error: ${error.message}`, 'error');
     }
 }
-
 // Edit group
 async function editGroup(groupName) {
     try {
@@ -1342,9 +1378,9 @@ async function editGroup(groupName) {
         document.getElementById('group-name').value = group.name;
         document.getElementById('group-caller-id').value = group.caller_id || '';
         
-        // Populate phone numbers - keep as simple strings for now
-        groupPhoneNumbers = group.phone_numbers || [];
-        updateGroupPhoneList();
+        // Populate contacts
+        groupContacts = group.contacts || [];
+        updateGroupContactsList();
         
         // Change button text
         document.getElementById('group-submit-btn').textContent = 'Save Changes';
@@ -1363,17 +1399,16 @@ async function editGroup(groupName) {
         alert(`Error loading group: ${error.message}`);
     }
 }
-
 // Update group
 async function updateGroupSubmit(oldName) {
-    if (groupPhoneNumbers.length === 0) {
-        showAlert('group-alert', 'Please add at least one phone number', 'error');
+    if (groupContacts.length === 0) {
+        showAlert('group-alert', 'Please add at least one contact', 'error');
         return;
     }
 
     const data = {
         name: document.getElementById('group-name').value,
-        phone_numbers: groupPhoneNumbers, // Already strings
+        contacts: groupContacts,
         caller_id: document.getElementById('group-caller-id').value || null
     };
 
@@ -1387,8 +1422,8 @@ async function updateGroupSubmit(oldName) {
         if (response.ok) {
             showAlert('group-alert', 'Group updated successfully!', 'success');
             document.getElementById('group-form').reset();
-            groupPhoneNumbers = [];
-            updateGroupPhoneList();
+            groupContacts = [];
+            updateGroupContactsList();
             
             // Reset button text and form to create mode
             document.getElementById('group-submit-btn').textContent = 'Create Group';
