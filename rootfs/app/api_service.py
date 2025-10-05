@@ -882,23 +882,35 @@ async def delete_group(group_name: str):
 @app.post("/api/calls/{call_id}/hangup")
 async def hangup_call(call_id: str):
     """Hangup an active call"""
+    # CRITICAL: Print immediately to bypass any logging buffer issues
+    print(f"========== HANGUP ENDPOINT HIT: {call_id} ==========", flush=True)
+    
     try:
         logger.info(f"Hangup requested for call_id: {call_id}")
         
-        # Step 1: Try to delete the call file if it's still in the spool (handles ringing state)
+        # Step 1: Try to delete the call file
         spool_dir = "/var/spool/asterisk/outgoing"
         deleted_file = False
         
+        print(f"Checking spool directory: {spool_dir}", flush=True)
+        
         try:
-            for filename in os.listdir(spool_dir):
+            files = os.listdir(spool_dir)
+            print(f"Files in spool: {files}", flush=True)
+            
+            for filename in files:
+                print(f"Checking file: {filename}", flush=True)
                 if call_id in filename:
                     file_path = os.path.join(spool_dir, filename)
                     os.remove(file_path)
                     logger.info(f"Deleted call file: {filename}")
+                    print(f"DELETED FILE: {filename}", flush=True)
                     deleted_file = True
                     break
         except Exception as e:
-            logger.warning(f"Could not delete call file: {e}")
+            error_msg = f"Could not delete call file: {e}"
+            logger.warning(error_msg)
+            print(error_msg, flush=True)
         
         # Step 2: Try to hangup active channels
         result = subprocess.run(
@@ -911,17 +923,16 @@ async def hangup_call(call_id: str):
         logger.info(f"Channels output: {result.stdout}")
         
         channel = None
-        # Look for any active trunk_main channel
         for line in result.stdout.split('\n'):
             if 'trunk_main' in line and ('Up' in line or 'Ringing' in line or 'Ring' in line):
                 parts = line.split('!')
                 if parts:
                     channel = parts[0]
                     logger.info(f"Found active channel: {channel}")
+                    print(f"FOUND CHANNEL: {channel}", flush=True)
                     break
         
         if channel:
-            # Hangup the channel
             hangup_result = subprocess.run(
                 ['asterisk', '-rx', f'channel request hangup {channel}'],
                 capture_output=True,
@@ -931,8 +942,9 @@ async def hangup_call(call_id: str):
             
             logger.info(f"Hangup command: channel request hangup {channel}")
             logger.info(f"Hangup result: {hangup_result.stdout}")
+            print(f"Hangup executed on {channel}", flush=True)
         
-        # Step 3: Update database regardless
+        # Step 3: Update database
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute('''
@@ -943,13 +955,19 @@ async def hangup_call(call_id: str):
         conn.commit()
         conn.close()
         
+        print(f"Database updated for {call_id}", flush=True)
+        
         if deleted_file or channel:
+            print("========== HANGUP SUCCESS ==========", flush=True)
             return {"status": "success", "message": "Call hangup requested"}
         else:
+            print("========== HANGUP: NO ACTIVE CALL FOUND ==========", flush=True)
             return {"status": "error", "message": "Call not found or already ended"}
             
     except Exception as e:
-        logger.error(f"Error hanging up call: {e}")
+        error_msg = f"Error hanging up call: {e}"
+        logger.error(error_msg)
+        print(f"========== HANGUP ERROR: {error_msg} ==========", flush=True)
         raise HTTPException(status_code=500, detail=str(e))
 # ============================================================================
 # RECORDINGS MANAGEMENT ENDPOINTS
