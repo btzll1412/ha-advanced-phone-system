@@ -62,6 +62,27 @@ def init_database():
     
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+
+
+def migrate_database():
+    """Migrate database to add contact names"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Check if contact_name column exists
+    cursor.execute("PRAGMA table_info(group_members)")
+    columns = [column[1] for column in cursor.fetchall()]
+    
+    if 'contact_name' not in columns:
+        logger.info("Migrating database: adding contact_name column")
+        cursor.execute('''
+            ALTER TABLE group_members 
+            ADD COLUMN contact_name TEXT
+        ''')
+        conn.commit()
+        logger.info("✓ Database migration completed")
+    
+    conn.close()
     
     # Call history table
     cursor.execute('''
@@ -147,11 +168,14 @@ class BroadcastRequest(BaseModel):
     pre_message_delay: int = 1  # Default: 1 second
     max_ring_time: int = 45  # Default: 45 seconds
 
+class ContactMember(BaseModel):
+    name: str
+    phone_number: str
+
 class ContactGroup(BaseModel):
     name: str
-    phone_numbers: List[str]
+    contacts: List[ContactMember]  # Changed from phone_numbers
     caller_id: Optional[str] = None
-
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -414,6 +438,7 @@ async def process_broadcast(broadcast_id: str, request: BroadcastRequest):
 async def startup_event():
     """Initialize on startup"""
     init_database()
+    migrate_database()  # Add this line
     os.makedirs(RECORDINGS_PATH, exist_ok=True)
     os.makedirs(ASTERISK_SOUNDS, exist_ok=True)
     logger.info("✓ API Service started")
@@ -713,6 +738,15 @@ async def get_call_history(limit: int = 50):
         logger.error(f"Error getting call history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+class ContactMember(BaseModel):
+    name: str
+    phone_number: str
+
+class ContactGroup(BaseModel):
+    name: str
+    contacts: List[ContactMember]  # Changed from phone_numbers
+    caller_id: Optional[str] = None
+
 @app.post("/api/groups")
 async def create_group(group: ContactGroup):
     """Create a contact group"""
@@ -728,12 +762,12 @@ async def create_group(group: ContactGroup):
         
         group_id = cursor.lastrowid
         
-        # Add members
-        for number in group.phone_numbers:
+        # Add members with names
+        for contact in group.contacts:
             cursor.execute('''
-                INSERT INTO group_members (group_id, phone_number)
-                VALUES (?, ?)
-            ''', (group_id, number))
+                INSERT INTO group_members (group_id, phone_number, contact_name)
+                VALUES (?, ?, ?)
+            ''', (group_id, contact.phone_number, contact.name))
         
         conn.commit()
         conn.close()
@@ -775,7 +809,6 @@ async def list_groups():
         logger.error(f"Error listing groups: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/groups/{group_name}")
 async def get_group_details(group_name: str):
     """Get details of a specific contact group"""
@@ -796,14 +829,19 @@ async def get_group_details(group_name: str):
         
         group_id, name, caller_id = group_row
         
-        # Get group members
+        # Get group members with names
         cursor.execute('''
-            SELECT phone_number
+            SELECT phone_number, contact_name
             FROM group_members
             WHERE group_id = ?
         ''', (group_id,))
         
-        phone_numbers = [row[0] for row in cursor.fetchall()]
+        contacts = []
+        for row in cursor.fetchall():
+            contacts.append({
+                "phone_number": row[0],
+                "name": row[1] or ""  # Default to empty string if NULL
+            })
         
         conn.close()
         
@@ -811,7 +849,7 @@ async def get_group_details(group_name: str):
             "id": group_id,
             "name": name,
             "caller_id": caller_id,
-            "phone_numbers": phone_numbers
+            "contacts": contacts
         }
         
     except HTTPException:
@@ -845,12 +883,12 @@ async def update_group(group_name: str, group: ContactGroup):
         # Delete old members
         cursor.execute('DELETE FROM group_members WHERE group_id = ?', (group_id,))
         
-        # Add new members
-        for number in group.phone_numbers:
+        # Add new members with names
+        for contact in group.contacts:
             cursor.execute('''
-                INSERT INTO group_members (group_id, phone_number)
-                VALUES (?, ?)
-            ''', (group_id, number))
+                INSERT INTO group_members (group_id, phone_number, contact_name)
+                VALUES (?, ?, ?)
+            ''', (group_id, contact.phone_number, contact.name))
         
         conn.commit()
         conn.close()
@@ -879,6 +917,7 @@ async def delete_group(group_name: str):
         logger.error(f"Error deleting group: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ... rest of your code including hangup_call stays the same
 @app.post("/api/calls/{call_id}/hangup")
 async def hangup_call(call_id: str):
     """Hangup an active call"""
