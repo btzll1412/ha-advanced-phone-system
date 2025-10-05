@@ -967,38 +967,38 @@ document.getElementById('call-form').addEventListener('submit', async (e) => {
         }
 
         list.innerHTML = data.active_calls.map(call => {
-    const statusColors = {
-        'initiated': '#ffc107',
-        'ringing': '#17a2b8',
-        'answered': '#28a745'
-    };
-    
-    const statusLabels = {
-        'initiated': 'Dialing',
-        'ringing': 'Ringing',
-        'answered': 'In Progress'
-    };
-    
-    return `
-        <div class="call-history-item" style="background: linear-gradient(90deg, ${statusColors[call.status]}15 0%, transparent 100%);">
-            <div class="call-info">
-                <div class="call-number">
-                    ${call.phone_number}
-                    ${call.caller_id ? `<span style="color: #666; font-size: 14px; margin-left: 10px;">as ${call.caller_id}</span>` : ''}
+            const statusColors = {
+                'initiated': '#ffc107',
+                'ringing': '#17a2b8',
+                'answered': '#28a745'
+            };
+            
+            const statusLabels = {
+                'initiated': 'Dialing',
+                'ringing': 'Ringing',
+                'answered': 'In Progress'
+            };
+            
+            return `
+                <div class="call-history-item" style="background: linear-gradient(90deg, ${statusColors[call.status]}15 0%, transparent 100%);">
+                    <div class="call-info">
+                        <div class="call-number">
+                            ${call.phone_number}
+                            ${call.caller_id ? `<span style="color: #666; font-size: 14px; margin-left: 10px;">as ${call.caller_id}</span>` : ''}
+                        </div>
+                        <div class="call-time">
+                            Duration: ${call.duration}s • Started: ${new Date(call.started_at).toLocaleTimeString()}
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span class="status-badge" style="background: ${statusColors[call.status]}; color: white;">
+                            ${statusLabels[call.status]}
+                        </span>
+                        <button class="btn btn-danger btn-small" data-call-id="${call.call_id}" onclick="hangupCall('${call.call_id}')">Hangup</button>
+                    </div>
                 </div>
-                <div class="call-time">
-                    Duration: ${call.duration}s • Started: ${new Date(call.started_at).toLocaleTimeString()}
-                </div>
-            </div>
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <span class="status-badge" style="background: ${statusColors[call.status]}; color: white;">
-                    ${statusLabels[call.status]}
-                </span>
-                <button class="btn btn-danger btn-small" onclick="hangupCall('${call.call_id}')">Hangup</button>
-            </div>
-        </div>
-    `;
-}).join('');
+            `;
+        }).join('');
     } catch (error) {
         list.innerHTML = `<p style="color: #dc3545;">Error: ${error.message}</p>`;
     }
@@ -1368,42 +1368,48 @@ async function deleteGroup(groupName) {
 
 // Hangup active call
 async function hangupCall(callId) {
-    console.log('Hangup button clicked for call_id:', callId);
+    console.log('=== HANGUP DEBUG START ===');
+    console.log('Call ID received:', callId);
+    console.log('Call ID type:', typeof callId);
+    console.log('Call ID length:', callId ? callId.length : 'null');
     
-    if (!confirm('Are you sure you want to hangup this call?')) {
-        console.log('Hangup cancelled by user');
+    if (!callId || callId === 'undefined') {
+        console.error('Invalid call_id provided to hangupCall');
+        alert('Error: Invalid call ID');
         return;
     }
     
-    console.log('Sending hangup request...');
+    if (!confirm('Are you sure you want to hangup this call?')) {
+        console.log('User cancelled hangup');
+        return;
+    }
+    
+    console.log('Proceeding with hangup...');
     
     try {
         const url = `${API_URL}/api/calls/${callId}/hangup`;
-        console.log('Hangup URL:', url);
+        console.log('Request URL:', url);
         
         const response = await fetch(url, {
             method: 'POST'
         });
 
-        console.log('Hangup response status:', response.status);
+        console.log('Response status:', response.status);
         const result = await response.json();
-        console.log('Hangup result:', result);
+        console.log('Response body:', result);
         
         if (response.ok) {
-            if (result.status === 'success') {
-                console.log('Hangup successful');
-                // Refresh active calls immediately
-                setTimeout(loadActiveCalls, 500);
-            } else {
-                console.log('Hangup failed:', result.message);
-                loadActiveCalls();
-            }
+            console.log('Hangup request successful');
+            setTimeout(loadActiveCalls, 500);
         } else {
-            console.error('Hangup request failed:', result.message);
+            console.error('Hangup failed:', result.message);
         }
     } catch (error) {
-        console.error('Hangup error:', error);
+        console.error('Hangup exception:', error);
     }
+    
+    console.log('=== HANGUP DEBUG END ===');
+
 }
         
     </script>
