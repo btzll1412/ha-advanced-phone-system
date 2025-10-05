@@ -924,14 +924,15 @@ async def hangup_call(call_id: str):
 
         channel = None
         for line in result.stdout.split('\n'):
-            # Match ANY trunk_main channel, regardless of state
-            if 'trunk_main' in line and 'outbound-playback' in line:
+            # Match ANY trunk_main channel - remove context requirement
+            if 'trunk_main' in line:
                 parts = line.split('!')
                 if parts:
                     channel = parts[0]
                     state = parts[4] if len(parts) > 4 else 'Unknown'
-                    logger.info(f"Found channel: {channel} (State: {state})")
-                    print(f"FOUND CHANNEL: {channel} (State: {state})", flush=True)
+                    context = parts[1] if len(parts) > 1 else 'Unknown'
+                    logger.info(f"Found channel: {channel} (Context: {context}, State: {state})")
+                    print(f"FOUND CHANNEL: {channel} (Context: {context}, State: {state})", flush=True)
                     break
 
         if channel:
