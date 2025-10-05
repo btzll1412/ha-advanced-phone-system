@@ -870,10 +870,29 @@
             }
         }
 
-        function playRecording(filename) {
-            const audio = new Audio(`${API_URL}/api/recordings/play/${filename}`);
-            audio.play();
-        }
+        let currentAudio = null;
+
+function playRecording(filename) {
+    // Stop any currently playing audio
+    if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+    }
+    
+    currentAudio = new Audio(`${API_URL}/api/recordings/play/${filename}`);
+    currentAudio.play();
+    
+    currentAudio.addEventListener('ended', () => {
+        currentAudio = null;
+    });
+}
+
+function stopRecording() {
+    if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+    }
+}
 
         async function renameRecording(filename) {
             const newName = prompt('Enter new name (without extension):', filename.split('.')[0]);
