@@ -1376,13 +1376,21 @@ async function hangupCall(callId) {
         });
 
         const result = await response.json();
+        
         if (response.ok) {
-            await loadActiveCalls();
+            if (result.status === 'success') {
+                showAlert('call-alert', 'Call hangup requested', 'success');
+                // Refresh active calls immediately
+                setTimeout(loadActiveCalls, 500);
+            } else {
+                showAlert('call-alert', result.message || 'Call may have already ended', 'info');
+                loadActiveCalls();
+            }
         } else {
-            alert(result.message || 'Failed to hangup call');
+            showAlert('call-alert', result.message || 'Failed to hangup call', 'error');
         }
     } catch (error) {
-        alert(`Error: ${error.message}`);
+        showAlert('call-alert', `Error: ${error.message}`, 'error');
     }
 }
         
