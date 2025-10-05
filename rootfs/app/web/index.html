@@ -1286,8 +1286,11 @@ async function editGroup(groupName) {
         document.getElementById('group-caller-id').value = group.caller_id || '';
         
         // Populate phone numbers
-        groupPhoneNumbers = group.phone_numbers;
+        groupPhoneNumbers = group.phone_numbers.map(num => ({number: num, name: ''})); // Convert to objects
         updateGroupPhoneList();
+        
+        // Change button text
+        document.getElementById('group-submit-btn').textContent = 'Save Changes';
         
         // Change form submit to update mode
         const form = document.getElementById('group-form');
