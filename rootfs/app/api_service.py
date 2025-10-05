@@ -775,6 +775,151 @@ async def list_groups():
         logger.error(f"Error listing groups: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/api/groups/{group_name}")
+async def get_group_details(group_name: str):
+    """Get details of a specific contact group"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get group info
+        cursor.execute('''
+            SELECT id, name, caller_id
+            FROM contact_groups
+            WHERE name = ?
+        ''', (group_name,))
+        
+        group_row = cursor.fetchone()
+        if not group_row:
+            raise HTTPException(status_code=404, detail="Group not found")
+        
+        group_id, name, caller_id = group_row
+        
+        # Get group members
+        cursor.execute('''
+            SELECT phone_number
+            FROM group_members
+            WHERE group_id = ?
+        ''', (group_id,))
+        
+        phone_numbers = [row[0] for row in cursor.fetchall()]
+        
+        conn.close()
+        
+        return {
+            "id": group_id,
+            "name": name,
+            "caller_id": caller_id,
+            "phone_numbers": phone_numbers
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting group details: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/groups/{group_name}")
+async def update_group(group_name: str, group: ContactGroup):
+    """Update a contact group"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get group ID
+        cursor.execute('SELECT id FROM contact_groups WHERE name = ?', (group_name,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Group not found")
+        
+        group_id = row[0]
+        
+        # Update group info
+        cursor.execute('''
+            UPDATE contact_groups 
+            SET name = ?, caller_id = ?
+            WHERE id = ?
+        ''', (group.name, group.caller_id, group_id))
+        
+        # Delete old members
+        cursor.execute('DELETE FROM group_members WHERE group_id = ?', (group_id,))
+        
+        # Add new members
+        for number in group.phone_numbers:
+            cursor.execute('''
+                INSERT INTO group_members (group_id, phone_number)
+                VALUES (?, ?)
+            ''', (group_id, number))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"status": "success", "message": "Group updated successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating group: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/groups/{group_name}")
+async def delete_group(group_name: str):
+    """Delete a contact group"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM contact_groups WHERE name = ?', (group_name,))
+        conn.commit()
+        conn.close()
+        
+        return {"status": "success", "message": "Group deleted"}
+        
+    except Exception as e:
+        logger.error(f"Error deleting group: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/calls/{call_id}/hangup")
+async def hangup_call(call_id: str):
+    """Hangup an active call"""
+    try:
+        # Use Asterisk CLI to hangup the call
+        # Find the channel for this call_id
+        result = subprocess.run(
+            ['asterisk', '-rx', f'core show channels verbose'],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        
+        # Parse output to find channel with our CALL_ID
+        channel = None
+        for line in result.stdout.split('\n'):
+            if call_id in line and 'SIP/trunk_main' in line:
+                # Extract channel name (format: SIP/trunk_main-00000000)
+                parts = line.split()
+                if parts:
+                    channel = parts[0]
+                    break
+        
+        if channel:
+            # Hangup the channel
+            hangup_result = subprocess.run(
+                ['asterisk', '-rx', f'channel request hangup {channel}'],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            logger.info(f"Hangup requested for call {call_id} on channel {channel}")
+            return {"status": "success", "message": "Call hangup requested"}
+        else:
+            return {"status": "error", "message": "Call not found or already ended"}
+            
+    except Exception as e:
+        logger.error(f"Error hanging up call: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ============================================================================
 # RECORDINGS MANAGEMENT ENDPOINTS
 # ============================================================================
