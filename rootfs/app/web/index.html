@@ -1285,8 +1285,8 @@ async function editGroup(groupName) {
         document.getElementById('group-name').value = group.name;
         document.getElementById('group-caller-id').value = group.caller_id || '';
         
-        // Populate phone numbers
-        groupPhoneNumbers = group.phone_numbers.map(num => ({number: num, name: ''})); // Convert to objects
+        // Populate phone numbers - keep as simple strings for now
+        groupPhoneNumbers = group.phone_numbers || [];
         updateGroupPhoneList();
         
         // Change button text
@@ -1316,7 +1316,7 @@ async function updateGroupSubmit(oldName) {
 
     const data = {
         name: document.getElementById('group-name').value,
-        phone_numbers: groupPhoneNumbers.map(c => c.number), // Extract just numbers
+        phone_numbers: groupPhoneNumbers, // Already strings
         caller_id: document.getElementById('group-caller-id').value || null
     };
 
