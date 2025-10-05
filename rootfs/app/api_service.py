@@ -883,7 +883,7 @@ async def delete_group(group_name: str):
 async def hangup_call(call_id: str):
     """Hangup an active call"""
     try:
-        # Method 1: Try to find and hangup using channel name pattern
+        # Get all channels and search through them
         result = subprocess.run(
             ['asterisk', '-rx', 'core show channels concise'],
             capture_output=True,
@@ -894,17 +894,42 @@ async def hangup_call(call_id: str):
         logger.info(f"Looking for call_id: {call_id}")
         logger.info(f"Channels output: {result.stdout}")
         
-        # Parse the concise output - format: channel!context!extension!priority!state!application!data!callerid!accountcode!peeraccoun!amaflags!duration!bridged!uniqueid
+        # The output shows channel!context!extension!priority!state!application!data!callerid!accountcode!peeraccount!amaflags!duration!bridged!uniqueid
+        # We need to get the channel name (first field) for any active call
+        # Since call_id is stored in a channel variable, we need to get the channel by checking if it's in outbound-playback context
+        
         channel = None
         for line in result.stdout.split('\n'):
-            if call_id in line:
+            if 'outbound-playback' in line and 'trunk_main' in line:
                 parts = line.split('!')
                 if parts:
-                    channel = parts[0]
-                    break
+                    # Get the channel name (first part)
+                    potential_channel = parts[0]
+                    
+                    # Now check if this channel has our call_id by getting channel variables
+                    var_result = subprocess.run(
+                        ['asterisk', '-rx', f'dialplan show chanvar {potential_channel} CALL_ID'],
+                        capture_output=True,
+                        text=True,
+                        check=False
+                    )
+                    
+                    if call_id in var_result.stdout:
+                        channel = potential_channel
+                        break
+        
+        # If the above didn't work, just grab the first active trunk_main channel
+        if not channel:
+            for line in result.stdout.split('\n'):
+                if 'trunk_main' in line and 'Up' in line:
+                    parts = line.split('!')
+                    if parts:
+                        channel = parts[0]
+                        logger.info(f"Found active channel by pattern: {channel}")
+                        break
         
         if channel:
-            # Method 2: Use soft hangup instead of request hangup
+            # Use channel request hangup
             hangup_result = subprocess.run(
                 ['asterisk', '-rx', f'channel request hangup {channel}'],
                 capture_output=True,
@@ -912,10 +937,11 @@ async def hangup_call(call_id: str):
                 check=False
             )
             
-            logger.info(f"Hangup command result: {hangup_result.stdout}")
+            logger.info(f"Hangup command: channel request hangup {channel}")
+            logger.info(f"Hangup result: {hangup_result.stdout}")
             logger.info(f"Hangup stderr: {hangup_result.stderr}")
             
-            # Also update database immediately
+            # Update database
             conn = get_db()
             cursor = conn.cursor()
             cursor.execute('''
@@ -928,7 +954,7 @@ async def hangup_call(call_id: str):
             
             return {"status": "success", "message": f"Hangup requested for channel {channel}"}
         else:
-            logger.warning(f"Channel not found for call_id: {call_id}")
+            logger.warning(f"No active channel found")
             
             # Mark as ended in database anyway
             conn = get_db()
