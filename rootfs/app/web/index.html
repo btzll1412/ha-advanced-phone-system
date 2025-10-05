@@ -816,41 +816,41 @@
 
         // Recordings management
         async function loadRecordings() {
-            const list = document.getElementById('recordings-list');
-            list.innerHTML = '<div class="loading"><div class="spinner"></div>Loading recordings...</div>';
+    const list = document.getElementById('recordings-list');
+    list.innerHTML = '<div class="loading"><div class="spinner"></div>Loading recordings...</div>';
 
-            try {
-                const response = await fetch(`${API_URL}/api/recordings`);
-                const data = await response.json();
-                
-                if (data.recordings.length === 0) {
-                    list.innerHTML = '<p style="color: #666; text-align: center;">No recordings yet. Upload one to get started!</p>';
-                    return;
-                }
-
-                list.innerHTML = data.recordings.map(r => `
-                    <div class="recording-card">
-                        <div class="recording-info">
-                            <h4>
-                                ${r.display_name}
-                                <span class="format-badge format-${r.format.toLowerCase()}">${r.format}</span>
-                            </h4>
-                            <div class="recording-meta">
-                                ${r.size_mb} MB • ${new Date(r.created).toLocaleString()}
-                            </div>
-                        </div>
-                        <div class="recording-actions">
-                            <button class="btn btn-secondary btn-small" onclick="playRecording('${r.filename}')">Play</button>
-                            <button class="btn btn-secondary btn-small" onclick="renameRecording('${r.filename}')">Rename</button>
-                            <button class="btn btn-danger btn-small" onclick="deleteRecording('${r.filename}')">Delete</button>
-                        </div>
-                    </div>
-                `).join('');
-            } catch (error) {
-                list.innerHTML = `<p style="color: #dc3545;">Error: ${error.message}</p>`;
-            }
+    try {
+        const response = await fetch(`${API_URL}/api/recordings`);
+        const data = await response.json();
+        
+        if (data.recordings.length === 0) {
+            list.innerHTML = '<p style="color: #666; text-align: center;">No recordings yet. Upload one to get started!</p>';
+            return;
         }
 
+        list.innerHTML = data.recordings.map(r => `
+            <div class="recording-card">
+                <div class="recording-info">
+                    <h4>
+                        ${r.display_name}
+                        <span class="format-badge format-${r.format.toLowerCase()}">${r.format}</span>
+                    </h4>
+                    <div class="recording-meta">
+                        ${r.size_mb} MB • ${new Date(r.created).toLocaleString()}
+                    </div>
+                </div>
+                <div class="recording-actions">
+                    <button class="btn btn-secondary btn-small" onclick="playRecording('${r.filename}')">Play</button>
+                    <button class="btn btn-danger btn-small" onclick="stopRecording()">Stop</button>
+                    <button class="btn btn-secondary btn-small" onclick="renameRecording('${r.filename}')">Rename</button>
+                    <button class="btn btn-danger btn-small" onclick="deleteRecording('${r.filename}')">Delete</button>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        list.innerHTML = `<p style="color: #dc3545;">Error: ${error.message}</p>`;
+    }
+}
         async function loadRecordingsForSelect(selectId) {
             const select = document.getElementById(selectId);
             try {
