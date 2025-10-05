@@ -883,7 +883,24 @@ async def delete_group(group_name: str):
 async def hangup_call(call_id: str):
     """Hangup an active call"""
     try:
-        # Get all channels and search through them
+        logger.info(f"Hangup requested for call_id: {call_id}")
+        
+        # Step 1: Try to delete the call file if it's still in the spool (handles ringing state)
+        spool_dir = "/var/spool/asterisk/outgoing"
+        deleted_file = False
+        
+        try:
+            for filename in os.listdir(spool_dir):
+                if call_id in filename:
+                    file_path = os.path.join(spool_dir, filename)
+                    os.remove(file_path)
+                    logger.info(f"Deleted call file: {filename}")
+                    deleted_file = True
+                    break
+        except Exception as e:
+            logger.warning(f"Could not delete call file: {e}")
+        
+        # Step 2: Try to hangup active channels
         result = subprocess.run(
             ['asterisk', '-rx', 'core show channels concise'],
             capture_output=True,
@@ -891,45 +908,20 @@ async def hangup_call(call_id: str):
             check=False
         )
         
-        logger.info(f"Looking for call_id: {call_id}")
         logger.info(f"Channels output: {result.stdout}")
         
-        # The output shows channel!context!extension!priority!state!application!data!callerid!accountcode!peeraccount!amaflags!duration!bridged!uniqueid
-        # We need to get the channel name (first field) for any active call
-        # Since call_id is stored in a channel variable, we need to get the channel by checking if it's in outbound-playback context
-        
         channel = None
+        # Look for any active trunk_main channel
         for line in result.stdout.split('\n'):
-            if 'outbound-playback' in line and 'trunk_main' in line:
+            if 'trunk_main' in line and ('Up' in line or 'Ringing' in line or 'Ring' in line):
                 parts = line.split('!')
                 if parts:
-                    # Get the channel name (first part)
-                    potential_channel = parts[0]
-                    
-                    # Now check if this channel has our call_id by getting channel variables
-                    var_result = subprocess.run(
-                        ['asterisk', '-rx', f'dialplan show chanvar {potential_channel} CALL_ID'],
-                        capture_output=True,
-                        text=True,
-                        check=False
-                    )
-                    
-                    if call_id in var_result.stdout:
-                        channel = potential_channel
-                        break
-        
-        # If the above didn't work, just grab the first active trunk_main channel
-        if not channel:
-            for line in result.stdout.split('\n'):
-                if 'trunk_main' in line and 'Up' in line:
-                    parts = line.split('!')
-                    if parts:
-                        channel = parts[0]
-                        logger.info(f"Found active channel by pattern: {channel}")
-                        break
+                    channel = parts[0]
+                    logger.info(f"Found active channel: {channel}")
+                    break
         
         if channel:
-            # Use channel request hangup
+            # Hangup the channel
             hangup_result = subprocess.run(
                 ['asterisk', '-rx', f'channel request hangup {channel}'],
                 capture_output=True,
@@ -939,40 +931,26 @@ async def hangup_call(call_id: str):
             
             logger.info(f"Hangup command: channel request hangup {channel}")
             logger.info(f"Hangup result: {hangup_result.stdout}")
-            logger.info(f"Hangup stderr: {hangup_result.stderr}")
-            
-            # Update database
-            conn = get_db()
-            cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE call_history 
-                SET status = 'hangup', ended_at = CURRENT_TIMESTAMP
-                WHERE call_id = ?
-            ''', (call_id,))
-            conn.commit()
-            conn.close()
-            
-            return {"status": "success", "message": f"Hangup requested for channel {channel}"}
+        
+        # Step 3: Update database regardless
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE call_history 
+            SET status = 'hangup', ended_at = CURRENT_TIMESTAMP
+            WHERE call_id = ?
+        ''', (call_id,))
+        conn.commit()
+        conn.close()
+        
+        if deleted_file or channel:
+            return {"status": "success", "message": "Call hangup requested"}
         else:
-            logger.warning(f"No active channel found")
-            
-            # Mark as ended in database anyway
-            conn = get_db()
-            cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE call_history 
-                SET status = 'hangup', ended_at = CURRENT_TIMESTAMP
-                WHERE call_id = ?
-            ''', (call_id,))
-            conn.commit()
-            conn.close()
-            
             return {"status": "error", "message": "Call not found or already ended"}
             
     except Exception as e:
         logger.error(f"Error hanging up call: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 # ============================================================================
 # RECORDINGS MANAGEMENT ENDPOINTS
 # ============================================================================
