@@ -967,35 +967,38 @@ document.getElementById('call-form').addEventListener('submit', async (e) => {
         }
 
         list.innerHTML = data.active_calls.map(call => {
-            const statusColors = {
-                'initiated': '#ffc107',
-                'ringing': '#17a2b8',
-                'answered': '#28a745'
-            };
-            
-            const statusLabels = {
-                'initiated': 'Dialing',
-                'ringing': 'Ringing',
-                'answered': 'In Progress'
-            };
-            
-            return `
-                <div class="call-history-item" style="background: linear-gradient(90deg, ${statusColors[call.status]}15 0%, transparent 100%);">
-                    <div class="call-info">
-                        <div class="call-number">
-                            ${call.phone_number}
-                            ${call.caller_id ? `<span style="color: #666; font-size: 14px; margin-left: 10px;">as ${call.caller_id}</span>` : ''}
-                        </div>
-                        <div class="call-time">
-                            Duration: ${call.duration}s • Started: ${new Date(call.started_at).toLocaleTimeString()}
-                        </div>
-                    </div>
-                    <span class="status-badge" style="background: ${statusColors[call.status]}; color: white;">
-                        ${statusLabels[call.status]}
-                    </span>
+    const statusColors = {
+        'initiated': '#ffc107',
+        'ringing': '#17a2b8',
+        'answered': '#28a745'
+    };
+    
+    const statusLabels = {
+        'initiated': 'Dialing',
+        'ringing': 'Ringing',
+        'answered': 'In Progress'
+    };
+    
+    return `
+        <div class="call-history-item" style="background: linear-gradient(90deg, ${statusColors[call.status]}15 0%, transparent 100%);">
+            <div class="call-info">
+                <div class="call-number">
+                    ${call.phone_number}
+                    ${call.caller_id ? `<span style="color: #666; font-size: 14px; margin-left: 10px;">as ${call.caller_id}</span>` : ''}
                 </div>
-            `;
-        }).join('');
+                <div class="call-time">
+                    Duration: ${call.duration}s • Started: ${new Date(call.started_at).toLocaleTimeString()}
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="status-badge" style="background: ${statusColors[call.status]}; color: white;">
+                    ${statusLabels[call.status]}
+                </span>
+                <button class="btn btn-danger btn-small" onclick="hangupCall('${call.call_id}')">Hangup</button>
+            </div>
+        </div>
+    `;
+}).join('');
     } catch (error) {
         list.innerHTML = `<p style="color: #dc3545;">Error: ${error.message}</p>`;
     }
@@ -1054,46 +1057,10 @@ document.getElementById('call-form').addEventListener('submit', async (e) => {
         });
 
         // Group Form
-        document.getElementById('group-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            if (groupPhoneNumbers.length === 0) {
-                showAlert('group-alert', 'Please add at least one phone number', 'error');
-                return;
-            }
-
-            const data = {
-                name: document.getElementById('group-name').value,
-                phone_numbers: groupPhoneNumbers,
-                caller_id: document.getElementById('group-caller-id').value || null
-            };
-
-            try {
-                const response = await fetch(`${API_URL}/api/groups`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
-
-                if (response.ok) {
-                    showAlert('group-alert', 'Group created successfully!', 'success');
-                    e.target.reset();
-                    groupPhoneNumbers = [];
-                    updateGroupPhoneList();
-                    setTimeout(loadGroups, 1000);
-                } else {
-                    const error = await response.json();
-                    showAlert('group-alert', error.detail || 'Failed to create group', 'error');
-                }
-            } catch (error) {
-                showAlert('group-alert', `Error: ${error.message}`, 'error');
-            }
-        });
-
-        
+    document.getElementById('group-form').addEventListener('submit', createGroupSubmit);
 
         // Load functions
-        async function loadDashboard() {
+    async function loadDashboard() {
             try {
                 const [callsRes, broadcastsRes, groupsRes, recordingsRes] = await Promise.all([
                     fetch(`${API_URL}/api/call_history?limit=10`),
@@ -1195,20 +1162,27 @@ document.getElementById('call-form').addEventListener('submit', async (e) => {
                     return;
                 }
 
-                // Update groups list
-                list.innerHTML = data.groups.map(g => `
-                    <div class="group-card">
-                        <h3>${g.name}</h3>
-                        <div class="member-count">${g.member_count} members</div>
-                        ${g.caller_id ? `<div style="color: #666; font-size: 14px; margin-top: 5px;">Caller ID: ${g.caller_id}</div>` : ''}
-                    </div>
-                `).join('');
+               // Update groups list
+list.innerHTML = data.groups.map(g => `
+    <div class="group-card">
+        <div style="display: flex; justify-content: space-between; align-items: start;">
+            <div>
+                <h3>${g.name}</h3>
+                <div class="member-count">${g.member_count} members</div>
+                ${g.caller_id ? `<div style="color: #666; font-size: 14px; margin-top: 5px;">Caller ID: ${g.caller_id}</div>` : ''}
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn btn-secondary btn-small" onclick="editGroup('${g.name}')">Edit</button>
+                <button class="btn btn-danger btn-small" onclick="deleteGroup('${g.name}')">Delete</button>
+            </div>
+        </div>
+    </div>
+`).join('');
 
-                // Update group select dropdown
-                select.innerHTML = data.groups.map(g => 
-                    `<option value="${g.name}">${g.name} (${g.member_count} members)</option>`
-                ).join('');
-
+// Update group select dropdown
+select.innerHTML = data.groups.map(g => 
+    `<option value="${g.name}">${g.name} (${g.member_count} members)</option>`
+).join('');
             } catch (error) {
                 list.innerHTML = `<p style="color: #dc3545;">Error: ${error.message}</p>`;
             }
@@ -1263,6 +1237,152 @@ setInterval(() => {
         loadActiveCalls();
     }
 }, 2000);
+
+// Create group (separated function)
+async function createGroupSubmit(e) {
+    e.preventDefault();
+    
+    if (groupPhoneNumbers.length === 0) {
+        showAlert('group-alert', 'Please add at least one phone number', 'error');
+        return;
+    }
+
+    const data = {
+        name: document.getElementById('group-name').value,
+        phone_numbers: groupPhoneNumbers,
+        caller_id: document.getElementById('group-caller-id').value || null
+    };
+
+    try {
+        const response = await fetch(`${API_URL}/api/groups`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+
+        if (response.ok) {
+            showAlert('group-alert', 'Group created successfully!', 'success');
+            e.target.reset();
+            groupPhoneNumbers = [];
+            updateGroupPhoneList();
+            setTimeout(loadGroups, 1000);
+        } else {
+            const error = await response.json();
+            showAlert('group-alert', error.detail || 'Failed to create group', 'error');
+        }
+    } catch (error) {
+        showAlert('group-alert', `Error: ${error.message}`, 'error');
+    }
+}
+
+// Edit group
+async function editGroup(groupName) {
+    try {
+        const response = await fetch(`${API_URL}/api/groups/${encodeURIComponent(groupName)}`);
+        const group = await response.json();
+        
+        // Populate form
+        document.getElementById('group-name').value = group.name;
+        document.getElementById('group-caller-id').value = group.caller_id || '';
+        
+        // Populate phone numbers
+        groupPhoneNumbers = group.phone_numbers;
+        updateGroupPhoneList();
+        
+        // Change form submit to update mode
+        const form = document.getElementById('group-form');
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            await updateGroupSubmit(groupName);
+        };
+        
+        // Scroll to form
+        document.getElementById('groups-tab').scrollIntoView({ behavior: 'smooth' });
+        
+    } catch (error) {
+        alert(`Error loading group: ${error.message}`);
+    }
+}
+
+// Update group
+async function updateGroupSubmit(oldName) {
+    if (groupPhoneNumbers.length === 0) {
+        showAlert('group-alert', 'Please add at least one phone number', 'error');
+        return;
+    }
+
+    const data = {
+        name: document.getElementById('group-name').value,
+        phone_numbers: groupPhoneNumbers,
+        caller_id: document.getElementById('group-caller-id').value || null
+    };
+
+    try {
+        const response = await fetch(`${API_URL}/api/groups/${encodeURIComponent(oldName)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+
+        if (response.ok) {
+            showAlert('group-alert', 'Group updated successfully!', 'success');
+            document.getElementById('group-form').reset();
+            groupPhoneNumbers = [];
+            updateGroupPhoneList();
+            
+            // Reset form to create mode
+            document.getElementById('group-form').onsubmit = createGroupSubmit;
+            
+            setTimeout(loadGroups, 1000);
+        } else {
+            const error = await response.json();
+            showAlert('group-alert', error.detail || 'Failed to update group', 'error');
+        }
+    } catch (error) {
+        showAlert('group-alert', `Error: ${error.message}`, 'error');
+    }
+}
+
+// Delete group
+async function deleteGroup(groupName) {
+    if (!confirm(`Are you sure you want to delete the group "${groupName}"?`)) return;
+    
+    try {
+        const response = await fetch(`${API_URL}/api/groups/${encodeURIComponent(groupName)}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            showAlert('group-alert', 'Group deleted successfully!', 'success');
+            setTimeout(loadGroups, 1000);
+        } else {
+            showAlert('group-alert', 'Failed to delete group', 'error');
+        }
+    } catch (error) {
+        showAlert('group-alert', `Error: ${error.message}`, 'error');
+    }
+}
+
+// Hangup active call
+async function hangupCall(callId) {
+    if (!confirm('Are you sure you want to hangup this call?')) return;
+    
+    try {
+        const response = await fetch(`${API_URL}/api/calls/${callId}/hangup`, {
+            method: 'POST'
+        });
+
+        const result = await response.json();
+        if (response.ok) {
+            await loadActiveCalls();
+        } else {
+            alert(result.message || 'Failed to hangup call');
+        }
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    }
+}
+        
     </script>
 </body>
 </html>
