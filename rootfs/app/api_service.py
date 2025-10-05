@@ -69,6 +69,17 @@ def migrate_database():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
+    # Check if group_members table exists
+    cursor.execute('''
+        SELECT name FROM sqlite_master 
+        WHERE type='table' AND name='group_members'
+    ''')
+    
+    if cursor.fetchone() is None:
+        # Table doesn't exist yet, skip migration
+        conn.close()
+        return
+    
     # Check if contact_name column exists
     cursor.execute("PRAGMA table_info(group_members)")
     columns = [column[1] for column in cursor.fetchall()]
