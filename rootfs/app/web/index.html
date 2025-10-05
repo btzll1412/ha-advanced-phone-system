@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+        <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -365,9 +365,46 @@
             margin-left: 10px;
         }
 
-        .format-wav { background: #d4edda; color: #155724; }
-        .format-gsm { background: #d1ecf1; color: #0c5460; }
-        .format-mp3 { background: #fff3cd; color: #856404; }
+        .contact-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s;
+        }
+
+        .contact-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+        }
+
+        .contact-info {
+            flex: 1;
+        }
+
+        .contact-name {
+            font-weight: 600;
+            color: #333;
+            font-size: 16px;
+        }
+
+        .contact-phone {
+            color: #666;
+            font-size: 14px;
+            margin-top: 4px;
+        }
+
+        .contact-actions {
+            display: flex;
+            gap: 8px;
+        }
+         .format-wav { background: #d4edda; color: #155724; }
+         .format-gsm { background: #d1ecf1; color: #0c5460; }
+         .format-mp3 { background: #fff3cd; color: #856404; }
     </style>
 </head>
 <body>
@@ -594,42 +631,43 @@
         </div>
 
         <!-- Groups Tab -->
-        <div id="groups-tab" class="content hidden">
-            <h2 style="margin-bottom: 20px; color: #333;">Contact Groups</h2>
-            
-            <div style="margin-bottom: 30px; padding: 20px; background: #f8f9fa; border-radius: 10px;">
-                <h3 style="margin-bottom: 15px;">Create New Group</h3>
-                <div id="group-alert" class="alert"></div>
-                
-                <form id="group-form">
-                    <div class="form-group">
-                        <label>Group Name *</label>
-                        <input type="text" id="group-name" placeholder="e.g., Family" required>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Phone Numbers *</label>
-                        <div style="display: flex; gap: 10px;">
-                            <input type="tel" id="group-phone-input" placeholder="+1234567890">
-                            <button type="button" class="btn btn-secondary" onclick="addGroupPhone()">Add</button>
-                        </div>
-                        <div class="phone-list" id="group-phone-list"></div>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Default Caller ID</label>
-                        <input type="text" id="group-caller-id" placeholder="Home Alert">
-                    </div>
-
-                    <button type="submit" class="btn" id="group-submit-btn">Create Group</button>
-                </form>
+        <!-- Groups Tab -->
+<div id="groups-tab" class="content hidden">
+    <h2 style="margin-bottom: 20px; color: #333;">Contact Groups</h2>
+    
+    <div style="margin-bottom: 30px; padding: 20px; background: #f8f9fa; border-radius: 10px;">
+        <h3 style="margin-bottom: 15px;">Create New Group</h3>
+        <div id="group-alert" class="alert"></div>
+        
+        <form id="group-form">
+            <div class="form-group">
+                <label>Group Name *</label>
+                <input type="text" id="group-name" placeholder="e.g., Family" required>
             </div>
 
-            <h3 style="margin-bottom: 15px;">Saved Groups</h3>
-            <button class="btn btn-secondary" onclick="loadGroups()" style="margin-bottom: 20px;">Refresh</button>
-            <div id="groups-list"></div>
-        </div>
+            <div class="form-group">
+                <label>Contacts *</label>
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <input type="text" id="contact-name-input" placeholder="Name" style="flex: 1;">
+                    <input type="tel" id="contact-phone-input" placeholder="+1234567890" style="flex: 1;">
+                    <button type="button" class="btn btn-secondary" onclick="addGroupContact()">Add</button>
+                </div>
+                <div id="group-contacts-list"></div>
+            </div>
 
+            <div class="form-group">
+                <label>Default Caller ID</label>
+                <input type="text" id="group-caller-id" placeholder="Home Alert">
+            </div>
+
+            <button type="submit" class="btn" id="group-submit-btn">Create Group</button>
+        </form>
+    </div>
+
+    <h3 style="margin-bottom: 15px;">Saved Groups</h3>
+    <button class="btn btn-secondary" onclick="loadGroups()" style="margin-bottom: 20px;">Refresh</button>
+    <div id="groups-list"></div>
+</div>
         <!-- History Tab -->
         <div id="history-tab" class="content hidden">
             <h2 style="margin-bottom: 20px; color: #333;">Call History</h2>
