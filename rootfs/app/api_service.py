@@ -883,27 +883,28 @@ async def delete_group(group_name: str):
 async def hangup_call(call_id: str):
     """Hangup an active call"""
     try:
-        # Use Asterisk CLI to hangup the call
-        # Find the channel for this call_id
+        # Method 1: Try to find and hangup using channel name pattern
         result = subprocess.run(
-            ['asterisk', '-rx', f'core show channels verbose'],
+            ['asterisk', '-rx', 'core show channels concise'],
             capture_output=True,
             text=True,
             check=False
         )
         
-        # Parse output to find channel with our CALL_ID
+        logger.info(f"Looking for call_id: {call_id}")
+        logger.info(f"Channels output: {result.stdout}")
+        
+        # Parse the concise output - format: channel!context!extension!priority!state!application!data!callerid!accountcode!peeraccoun!amaflags!duration!bridged!uniqueid
         channel = None
         for line in result.stdout.split('\n'):
-            if call_id in line and 'SIP/trunk_main' in line:
-                # Extract channel name (format: SIP/trunk_main-00000000)
-                parts = line.split()
+            if call_id in line:
+                parts = line.split('!')
                 if parts:
                     channel = parts[0]
                     break
         
         if channel:
-            # Hangup the channel
+            # Method 2: Use soft hangup instead of request hangup
             hangup_result = subprocess.run(
                 ['asterisk', '-rx', f'channel request hangup {channel}'],
                 capture_output=True,
@@ -911,9 +912,35 @@ async def hangup_call(call_id: str):
                 check=False
             )
             
-            logger.info(f"Hangup requested for call {call_id} on channel {channel}")
-            return {"status": "success", "message": "Call hangup requested"}
+            logger.info(f"Hangup command result: {hangup_result.stdout}")
+            logger.info(f"Hangup stderr: {hangup_result.stderr}")
+            
+            # Also update database immediately
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE call_history 
+                SET status = 'hangup', ended_at = CURRENT_TIMESTAMP
+                WHERE call_id = ?
+            ''', (call_id,))
+            conn.commit()
+            conn.close()
+            
+            return {"status": "success", "message": f"Hangup requested for channel {channel}"}
         else:
+            logger.warning(f"Channel not found for call_id: {call_id}")
+            
+            # Mark as ended in database anyway
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE call_history 
+                SET status = 'hangup', ended_at = CURRENT_TIMESTAMP
+                WHERE call_id = ?
+            ''', (call_id,))
+            conn.commit()
+            conn.close()
+            
             return {"status": "error", "message": "Call not found or already ended"}
             
     except Exception as e:
