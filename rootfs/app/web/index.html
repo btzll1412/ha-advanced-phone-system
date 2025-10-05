@@ -1316,7 +1316,7 @@ async function updateGroupSubmit(oldName) {
 
     const data = {
         name: document.getElementById('group-name').value,
-        phone_numbers: groupPhoneNumbers,
+        phone_numbers: groupPhoneNumbers.map(c => c.number), // Extract just numbers
         caller_id: document.getElementById('group-caller-id').value || null
     };
 
@@ -1333,7 +1333,8 @@ async function updateGroupSubmit(oldName) {
             groupPhoneNumbers = [];
             updateGroupPhoneList();
             
-            // Reset form to create mode
+            // Reset button text and form to create mode
+            document.getElementById('group-submit-btn').textContent = 'Create Group';
             document.getElementById('group-form').onsubmit = createGroupSubmit;
             
             setTimeout(loadGroups, 1000);
@@ -1345,7 +1346,6 @@ async function updateGroupSubmit(oldName) {
         showAlert('group-alert', `Error: ${error.message}`, 'error');
     }
 }
-
 // Delete group
 async function deleteGroup(groupName) {
     if (!confirm(`Are you sure you want to delete the group "${groupName}"?`)) return;
