@@ -1368,29 +1368,41 @@ async function deleteGroup(groupName) {
 
 // Hangup active call
 async function hangupCall(callId) {
-    if (!confirm('Are you sure you want to hangup this call?')) return;
+    console.log('Hangup button clicked for call_id:', callId);
+    
+    if (!confirm('Are you sure you want to hangup this call?')) {
+        console.log('Hangup cancelled by user');
+        return;
+    }
+    
+    console.log('Sending hangup request...');
     
     try {
-        const response = await fetch(`${API_URL}/api/calls/${callId}/hangup`, {
+        const url = `${API_URL}/api/calls/${callId}/hangup`;
+        console.log('Hangup URL:', url);
+        
+        const response = await fetch(url, {
             method: 'POST'
         });
 
+        console.log('Hangup response status:', response.status);
         const result = await response.json();
+        console.log('Hangup result:', result);
         
         if (response.ok) {
             if (result.status === 'success') {
-                showAlert('call-alert', 'Call hangup requested', 'success');
+                console.log('Hangup successful');
                 // Refresh active calls immediately
                 setTimeout(loadActiveCalls, 500);
             } else {
-                showAlert('call-alert', result.message || 'Call may have already ended', 'info');
+                console.log('Hangup failed:', result.message);
                 loadActiveCalls();
             }
         } else {
-            showAlert('call-alert', result.message || 'Failed to hangup call', 'error');
+            console.error('Hangup request failed:', result.message);
         }
     } catch (error) {
-        showAlert('call-alert', `Error: ${error.message}`, 'error');
+        console.error('Hangup error:', error);
     }
 }
         
