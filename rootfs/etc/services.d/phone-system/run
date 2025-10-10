@@ -141,17 +141,50 @@ exten => s,1,NoOp(=== Recording System ===)
  same => n,Answer()
  same => n,Wait(1)
  same => n,Playback(hello)
- same => n,Playback(vm-enter-num-to-call)
- same => n,Read(PASSWORD,then-press-pound,4,,4,5)
+ same => n,Set(WRONG_ATTEMPTS=0)
+ same => n,Set(EMPTY_ATTEMPTS=0)
+ same => n(ask_password),Playback(vm-enter-num-to-call)
+ same => n,Wait(5)
+ same => n,Read(PASSWORD,,4,,10)
  same => n,NoOp(Password entered: ${PASSWORD})
- same => n,GotoIf($["${PASSWORD}" = "RECORDING_PASSWORD_PLACEHOLDER"]?authorized:unauthorized)
- same => n(unauthorized),Playback(vm-incorrect)
+ ; Check if password is empty
+ same => n,GotoIf($["${PASSWORD}" = ""]?empty_password:check_password)
+ ; Handle empty password
+ same => n(empty_password),Set(EMPTY_ATTEMPTS=$[${EMPTY_ATTEMPTS} + 1])
+ same => n,NoOp(Empty password attempt ${EMPTY_ATTEMPTS}/3)
+ same => n,GotoIf($[${EMPTY_ATTEMPTS} >= 3]?too_many_empty:ask_password)
+ ; Check if password is correct
+ same => n(check_password),GotoIf($["${PASSWORD}" = "RECORDING_PASSWORD_PLACEHOLDER"]?authorized:wrong_password)
+ ; Handle wrong password
+ same => n(wrong_password),Set(WRONG_ATTEMPTS=$[${WRONG_ATTEMPTS} + 1])
+ same => n,NoOp(Wrong password attempt ${WRONG_ATTEMPTS}/5)
+ same => n,Playback(vm-incorrect)
+ same => n,GotoIf($[${WRONG_ATTEMPTS} >= 5]?too_many_wrong:ask_password)
+ ; Too many wrong attempts
+ same => n(too_many_wrong),Playback(vm-goodbye)
  same => n,Hangup()
+ ; Too many empty attempts
+ same => n(too_many_empty),Playback(vm-goodbye)
+ same => n,Hangup()
+ ; Password correct - proceed to recording
  same => n(authorized),Playback(auth-thankyou)
- same => n(get_name),Playback(vm-enter-num-to-call)
- same => n,Read(RECORDING_ID,then-press-pound,10,,10,5)
- same => n,GotoIf($["${RECORDING_ID}" = ""]?get_name)
- same => n,Playback(vm-rec-name)
+ same => n,Set(RECORDING_ATTEMPTS=0)
+ same => n,Wait(1)
+ same => n(ask_recording_id),Playback(vm-enter-num-to-call)
+ same => n,Wait(3)
+ same => n,Read(RECORDING_ID,,10,,15)
+ same => n,NoOp(Recording ID entered: ${RECORDING_ID})
+ ; Check if recording ID is empty
+ same => n,GotoIf($["${RECORDING_ID}" = ""]?empty_recording_id:start_recording)
+ ; Handle empty recording ID
+ same => n(empty_recording_id),Set(RECORDING_ATTEMPTS=$[${RECORDING_ATTEMPTS} + 1])
+ same => n,NoOp(Empty recording ID attempt ${RECORDING_ATTEMPTS}/3)
+ same => n,GotoIf($[${RECORDING_ATTEMPTS} >= 3]?no_recording_id:ask_recording_id)
+ ; Too many empty recording ID attempts
+ same => n(no_recording_id),Playback(vm-goodbye)
+ same => n,Hangup()
+ ; Start recording
+ same => n(start_recording),Playback(vm-rec-name)
  same => n,Playback(beep)
  same => n,Set(TIMESTAMP=${STRFTIME(${EPOCH},,%Y%m%d_%H%M%S)})
  same => n,Set(FILENAME=custom_${RECORDING_ID}_${TIMESTAMP})
@@ -164,10 +197,11 @@ exten => s,1,NoOp(=== Recording System ===)
 
 EOFEXT
 
-# Now replace the password placeholder with actual password
+# Replace password placeholder with actual password
 sed -i "s/RECORDING_PASSWORD_PLACEHOLDER/${RECORDING_PASSWORD}/g" /etc/asterisk/extensions.conf
 
 bashio::log.info "✓ Recording system configured on extension ${RECORDING_EXTENSION}"
+
 
 # Set permissions
 chown -R asterisk:asterisk /etc/asterisk
