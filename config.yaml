@@ -29,7 +29,7 @@ options:
     username: ""
     password: ""
     from_domain: ""
-    caller_number: ""    # ADD THIS LINE
+    caller_number: ""
   extensions:
     - number: "100"
       name: "Home Assistant"
@@ -46,6 +46,8 @@ options:
   recordings_path: "/share/phone_recordings"
   max_concurrent_calls: 5
   log_level: "info"
+  recording_extension: "999"
+  recording_password: "1234"
 schema:
   sip_trunk:
     enabled: bool
@@ -72,17 +74,8 @@ schema:
   recordings_path: str
   max_concurrent_calls: int(1,20)
   log_level: list(debug|info|warning|error)
-recording_extension:
-  name: Recording Extension
-  description: Extension number to dial for recording messages
-  type: str
-  default: "999"
-
-recording_password:
-  name: Recording Password
-  description: Password required to access recording system
-  type: str
-  default: "1234"
+  recording_extension: str
+  recording_password: password
 homeassistant_api: true
 hassio_api: true
 hassio_role: default
