@@ -1336,6 +1336,9 @@ setInterval(() => {
     }
 }, 2000);
 
+// Group Form - Remove the addEventListener, we'll handle it in the functions
+// document.getElementById('group-form').addEventListener('submit', createGroupSubmit);
+
 // Create group (separated function)
 async function createGroupSubmit(e) {
     e.preventDefault();
@@ -1360,7 +1363,7 @@ async function createGroupSubmit(e) {
 
         if (response.ok) {
             showAlert('group-alert', 'Group created successfully!', 'success');
-            e.target.reset();
+            document.getElementById('group-form').reset();
             groupContacts = [];
             updateGroupContactsList();
             setTimeout(loadGroups, 1000);
@@ -1372,6 +1375,7 @@ async function createGroupSubmit(e) {
         showAlert('group-alert', `Error: ${error.message}`, 'error');
     }
 }
+
 // Edit group
 async function editGroup(groupName) {
     try {
@@ -1389,9 +1393,12 @@ async function editGroup(groupName) {
         // Change button text
         document.getElementById('group-submit-btn').textContent = 'Save Changes';
         
-        // Change form submit to update mode
+        // Remove old listener and add new one for update
         const form = document.getElementById('group-form');
-        form.onsubmit = async (e) => {
+        const newForm = form.cloneNode(true);
+        form.parentNode.replaceChild(newForm, form);
+        
+        newForm.onsubmit = async (e) => {
             e.preventDefault();
             await updateGroupSubmit(groupName);
         };
@@ -1403,6 +1410,7 @@ async function editGroup(groupName) {
         alert(`Error loading group: ${error.message}`);
     }
 }
+
 // Update group
 async function updateGroupSubmit(oldName) {
     if (groupContacts.length === 0) {
@@ -1425,13 +1433,20 @@ async function updateGroupSubmit(oldName) {
 
         if (response.ok) {
             showAlert('group-alert', 'Group updated successfully!', 'success');
-            document.getElementById('group-form').reset();
+            
+            // Reset form to create mode
+            const form = document.getElementById('group-form');
+            const newForm = form.cloneNode(true);
+            form.parentNode.replaceChild(newForm, form);
+            
+            newForm.onsubmit = createGroupSubmit;
+            newForm.reset();
+            
             groupContacts = [];
             updateGroupContactsList();
             
-            // Reset button text and form to create mode
+            // Reset button text
             document.getElementById('group-submit-btn').textContent = 'Create Group';
-            document.getElementById('group-form').onsubmit = createGroupSubmit;
             
             setTimeout(loadGroups, 1000);
         } else {
@@ -1442,6 +1457,7 @@ async function updateGroupSubmit(oldName) {
         showAlert('group-alert', `Error: ${error.message}`, 'error');
     }
 }
+
 // Delete group
 async function deleteGroup(groupName) {
     if (!confirm(`Are you sure you want to delete the group "${groupName}"?`)) return;
@@ -1462,6 +1478,11 @@ async function deleteGroup(groupName) {
     }
 }
 
+// Initialize form with create mode
+document.getElementById('group-form').onsubmit = createGroupSubmit;
+
+
+            
 // Hangup active call
 async function hangupCall(callId) {
     console.log('=== HANGUP DEBUG START ===');
