@@ -1198,6 +1198,35 @@ async def play_recording(filename: str):
         logger.error(f"Error playing recording: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.post("/api/recordings/register")
+async def register_recording(filename: str, recording_id: str):
+    """Register a recording created via phone system"""
+    try:
+        file_path = os.path.join(ASTERISK_SOUNDS, filename)
+        
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="Recording file not found")
+        
+        # Get file info
+        file_size = os.path.getsize(file_path)
+        created_time = datetime.fromtimestamp(os.path.getctime(file_path))
+        
+        # Store metadata in database (optional - you can add a recordings table)
+        logger.info(f"Registered recording: {filename} (ID: {recording_id})")
+        
+        return {
+            "status": "success",
+            "filename": filename,
+            "recording_id": recording_id,
+            "size": file_size,
+            "created": created_time.isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error registering recording: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ============================================================================
 # START SERVER
 # ============================================================================
