@@ -124,6 +124,11 @@ done
 
 bashio::log.info "✓ ${EXTENSION_COUNT} extension(s) configured"
 
+# Get recording system configuration
+RECORDING_EXTENSION=$(bashio::config 'recording_extension')
+RECORDING_PASSWORD=$(bashio::config 'recording_password')
+bashio::log.info "Recording extension: ${RECORDING_EXTENSION}"
+
 # Set permissions
 chown -R asterisk:asterisk /etc/asterisk
 chown -R asterisk:asterisk /var/lib/asterisk
