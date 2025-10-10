@@ -1151,8 +1151,12 @@ document.getElementById('call-form').addEventListener('submit', async (e) => {
         });
 
         // Group Form
-    document.getElementById('group-form').addEventListener('submit', createGroupSubmit);
-
+    // Only set the initial create handler, editGroup will override it when needed
+                const groupForm = document.getElementById('group-form');
+                if (!groupForm.dataset.listenerSet) {
+                    groupForm.addEventListener('submit', createGroupSubmit);
+                    groupForm.dataset.listenerSet = 'true';
+                }
         // Load functions
     async function loadDashboard() {
             try {
