@@ -61,9 +61,9 @@ def init_database():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     
     # Force delete old database
-    if os.path.exists(DB_PATH):
-        os.remove(DB_PATH)
-        logger.info("🔄 Old database removed, creating fresh schema")
+   # if os.path.exists(DB_PATH):
+       # os.remove(DB_PATH)
+       # logger.info("🔄 Old database removed, creating fresh schema")
     
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
