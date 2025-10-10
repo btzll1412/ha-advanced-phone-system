@@ -8,10 +8,12 @@ RUN apk add --no-cache \
     asterisk \
     asterisk-sample-config \
     curl \
+    wget \
     bash \
     espeak \
     sox \
     && rm -rf /var/cache/apk/*
+
 # Install Python packages
 RUN pip3 install --no-cache-dir \
     fastapi \
@@ -33,7 +35,8 @@ RUN mkdir -p /data/database \
 COPY rootfs /
 
 # Set execute permissions
-RUN chmod +x /etc/services.d/phone-system/run
+RUN chmod +x /etc/services.d/phone-system/run \
+    && chmod +x /etc/cont-init.d/*.sh
 
 # Expose ports
 EXPOSE 5060/tcp 5060/udp 8088/tcp
@@ -43,6 +46,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8088/health || exit 1
 
 # Labels
-LABEL io.hass.version="1.0.0" \
+LABEL io.hass.version="1.1.0" \
       io.hass.type="addon" \
       io.hass.arch="armhf|armv7|aarch64|amd64|i386"
