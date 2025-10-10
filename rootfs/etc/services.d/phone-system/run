@@ -141,10 +141,10 @@ exten => s,1,NoOp(=== Recording System ===)
  same => n,Answer()
  same => n,Wait(1)
  same => n,Playback(hello)
+ same => n,Playback(pls-enter-your-pin)
  same => n,Set(WRONG_ATTEMPTS=0)
  same => n,Set(EMPTY_ATTEMPTS=0)
- same => n(ask_password),Playback(vm-enter-num-to-call)
- same => n,Wait(5)
+ same => n(ask_password),Wait(2)
  same => n,Read(PASSWORD,,4,,10)
  same => n,NoOp(Password entered: ${PASSWORD})
  ; Check if password is empty
@@ -152,6 +152,7 @@ exten => s,1,NoOp(=== Recording System ===)
  ; Handle empty password
  same => n(empty_password),Set(EMPTY_ATTEMPTS=$[${EMPTY_ATTEMPTS} + 1])
  same => n,NoOp(Empty password attempt ${EMPTY_ATTEMPTS}/3)
+ same => n,Playback(pls-enter-your-pin)
  same => n,GotoIf($[${EMPTY_ATTEMPTS} >= 3]?too_many_empty:ask_password)
  ; Check if password is correct
  same => n(check_password),GotoIf($["${PASSWORD}" = "RECORDING_PASSWORD_PLACEHOLDER"]?authorized:wrong_password)
@@ -159,6 +160,7 @@ exten => s,1,NoOp(=== Recording System ===)
  same => n(wrong_password),Set(WRONG_ATTEMPTS=$[${WRONG_ATTEMPTS} + 1])
  same => n,NoOp(Wrong password attempt ${WRONG_ATTEMPTS}/5)
  same => n,Playback(vm-incorrect)
+ same => n,Playback(pls-try-again)
  same => n,GotoIf($[${WRONG_ATTEMPTS} >= 5]?too_many_wrong:ask_password)
  ; Too many wrong attempts
  same => n(too_many_wrong),Playback(vm-goodbye)
@@ -170,8 +172,10 @@ exten => s,1,NoOp(=== Recording System ===)
  same => n(authorized),Playback(auth-thankyou)
  same => n,Set(RECORDING_ATTEMPTS=0)
  same => n,Wait(1)
- same => n(ask_recording_id),Playback(vm-enter-num-to-call)
- same => n,Wait(3)
+ same => n,Playback(to-enter-a-number)
+ same => n,Playback(press)
+ same => n,Playback(digits/1)
+ same => n(ask_recording_id),Wait(2)
  same => n,Read(RECORDING_ID,,10,,15)
  same => n,NoOp(Recording ID entered: ${RECORDING_ID})
  ; Check if recording ID is empty
@@ -179,6 +183,7 @@ exten => s,1,NoOp(=== Recording System ===)
  ; Handle empty recording ID
  same => n(empty_recording_id),Set(RECORDING_ATTEMPTS=$[${RECORDING_ATTEMPTS} + 1])
  same => n,NoOp(Empty recording ID attempt ${RECORDING_ATTEMPTS}/3)
+ same => n,Playback(pls-try-again)
  same => n,GotoIf($[${RECORDING_ATTEMPTS} >= 3]?no_recording_id:ask_recording_id)
  ; Too many empty recording ID attempts
  same => n(no_recording_id),Playback(vm-goodbye)
@@ -201,7 +206,6 @@ EOFEXT
 sed -i "s/RECORDING_PASSWORD_PLACEHOLDER/${RECORDING_PASSWORD}/g" /etc/asterisk/extensions.conf
 
 bashio::log.info "✓ Recording system configured on extension ${RECORDING_EXTENSION}"
-
 
 # Set permissions
 chown -R asterisk:asterisk /etc/asterisk
