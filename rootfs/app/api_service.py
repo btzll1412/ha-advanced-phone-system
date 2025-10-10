@@ -60,40 +60,13 @@ def init_database():
     """Initialize SQLite database"""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     
+    # Force delete old database
+    if os.path.exists(DB_PATH):
+        os.remove(DB_PATH)
+        logger.info("🔄 Old database removed, creating fresh schema")
+    
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-
-
-def migrate_database():
-    """Migrate database to add contact names"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # Check if group_members table exists
-    cursor.execute('''
-        SELECT name FROM sqlite_master 
-        WHERE type='table' AND name='group_members'
-    ''')
-    
-    if cursor.fetchone() is None:
-        # Table doesn't exist yet, skip migration
-        conn.close()
-        return
-    
-    # Check if contact_name column exists
-    cursor.execute("PRAGMA table_info(group_members)")
-    columns = [column[1] for column in cursor.fetchall()]
-    
-    if 'contact_name' not in columns:
-        logger.info("Migrating database: adding contact_name column")
-        cursor.execute('''
-            ALTER TABLE group_members 
-            ADD COLUMN contact_name TEXT
-        ''')
-        conn.commit()
-        logger.info("✓ Database migration completed")
-    
-    conn.close()
     
     # Call history table
     cursor.execute('''
@@ -139,12 +112,13 @@ def migrate_database():
         )
     ''')
     
-    # Group members table
+    # Group members table WITH contact_name column
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS group_members (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             group_id INTEGER NOT NULL,
             phone_number TEXT NOT NULL,
+            contact_name TEXT,
             FOREIGN KEY (group_id) REFERENCES contact_groups(id) ON DELETE CASCADE
         )
     ''')
@@ -153,6 +127,36 @@ def migrate_database():
     conn.close()
     logger.info("✓ Database initialized")
 
+def migrate_database():
+    """Migrate database to add contact names"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Check if group_members table exists
+    cursor.execute('''
+        SELECT name FROM sqlite_master 
+        WHERE type='table' AND name='group_members'
+    ''')
+    
+    if cursor.fetchone() is None:
+        # Table doesn't exist yet, skip migration
+        conn.close()
+        return
+    
+    # Check if contact_name column exists
+    cursor.execute("PRAGMA table_info(group_members)")
+    columns = [column[1] for column in cursor.fetchall()]
+    
+    if 'contact_name' not in columns:
+        logger.info("Migrating database: adding contact_name column")
+        cursor.execute('''
+            ALTER TABLE group_members 
+            ADD COLUMN contact_name TEXT
+        ''')
+        conn.commit()
+        logger.info("✓ Database migration completed")
+    
+    conn.close()
 # ============================================================================
 # MODELS
 # ============================================================================
