@@ -48,6 +48,7 @@ ASTERISK_SPOOL = "/var/spool/asterisk/outgoing"
 RECORDINGS_PATH = "/data/recordings"
 ASTERISK_SOUNDS = "/var/lib/asterisk/sounds/custom"
 
+
 # Home Assistant API
 HA_URL = os.getenv("SUPERVISOR_TOKEN") and "http://supervisor/core/api" or "http://homeassistant:8123/api"
 HA_TOKEN = os.getenv("SUPERVISOR_TOKEN", "")
@@ -56,16 +57,27 @@ HA_TOKEN = os.getenv("SUPERVISOR_TOKEN", "")
 # DATABASE SETUP
 # ============================================================================
 
+# Database connection helper with timeout
+def get_db_connection():
+    """Get database connection with timeout and WAL mode"""
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
 def init_database():
     """Initialize SQLite database"""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    
+    conn = get_db_connection()  # Changed this line
+    cursor = conn.cursor()
+    # ... rest stays the same
     
     # Force delete old database
    # if os.path.exists(DB_PATH):
        # os.remove(DB_PATH)
        # logger.info("🔄 Old database removed, creating fresh schema")
     
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     # Call history table
@@ -129,8 +141,9 @@ def init_database():
 
 def migrate_database():
     """Migrate database to add contact names"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()  # Changed this line
     cursor = conn.cursor()
+    # ... rest stays the same
     
     # Check if group_members table exists
     cursor.execute('''
@@ -224,7 +237,7 @@ def fire_ha_event(event_type: str, event_data: dict):
 
 def get_db():
     """Get database connection"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     conn.row_factory = sqlite3.Row
     return conn
 
