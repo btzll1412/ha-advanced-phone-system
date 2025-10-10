@@ -131,7 +131,7 @@ bashio::log.info "Recording extension configured: ${RECORDING_EXTENSION}"
 
 # Add recording extension context to extensions.conf
 bashio::log.info "Configuring recording system..."
-cat >> /etc/asterisk/extensions.conf << EOF
+cat >> /etc/asterisk/extensions.conf << 'EOFEXT'
 
 ; ============================================
 ; Recording System
@@ -141,27 +141,33 @@ exten => s,1,NoOp(=== Recording System ===)
  same => n,Answer()
  same => n,Wait(1)
  same => n,Playback(hello)
- same => n,Playback(please-enter-the)
- same => n,Read(PASSWORD,password,4)
- same => n,GotoIf(\$[\${PASSWORD} = ${RECORDING_PASSWORD}]?authorized:unauthorized)
- same => n(unauthorized),Playback(invalid)
+ same => n,Playback(vm-enter-num-to-call)
+ same => n,Read(PASSWORD,then-press-pound,4,,4,5)
+ same => n,NoOp(Password entered: ${PASSWORD})
+ same => n,GotoIf($["${PASSWORD}" = "RECORDING_PASSWORD_PLACEHOLDER"]?authorized:unauthorized)
+ same => n(unauthorized),Playback(vm-incorrect)
  same => n,Hangup()
- same => n(authorized),Playback(accepted)
- same => n(get_name),Playback(please-enter-your&extension)
- same => n,Read(RECORDING_ID,extension,10)
- same => n,GotoIf(\$["\${RECORDING_ID}" = ""]?get_name)
- same => n,Playback(at-tone-rec-msg)
+ same => n(authorized),Playback(auth-thankyou)
+ same => n(get_name),Playback(vm-enter-num-to-call)
+ same => n,Read(RECORDING_ID,then-press-pound,10,,10,5)
+ same => n,GotoIf($["${RECORDING_ID}" = ""]?get_name)
+ same => n,Playback(vm-rec-name)
  same => n,Playback(beep)
- same => n,Set(TIMESTAMP=\${STRFTIME(\${EPOCH},,%Y%m%d_%H%M%S)})
- same => n,Set(FILENAME=custom_\${RECORDING_ID}_\${TIMESTAMP})
- same => n,Record(/var/lib/asterisk/sounds/custom/\${FILENAME}.wav,3,30,y)
- same => n,System(curl -X POST "http://localhost:8088/api/recordings/register?filename=\${FILENAME}.wav&recording_id=\${RECORDING_ID}" 2>/dev/null)
- same => n,Playback(thank-you-for-calling)
+ same => n,Set(TIMESTAMP=${STRFTIME(${EPOCH},,%Y%m%d_%H%M%S)})
+ same => n,Set(FILENAME=custom_${RECORDING_ID}_${TIMESTAMP})
+ same => n,Record(/var/lib/asterisk/sounds/custom/${FILENAME}.wav,3,30,y)
+ same => n,Wait(1)
+ same => n,System(curl -X POST "http://localhost:8088/api/recordings/register?filename=${FILENAME}.wav&recording_id=${RECORDING_ID}" 2>/dev/null)
+ same => n,Playback(vm-msgsaved)
+ same => n,Playback(goodbye)
  same => n,Hangup()
 
-EOF
+EOFEXT
 
-bashio::log.info "✓ Recording system configured"
+# Now replace the password placeholder with actual password
+sed -i "s/RECORDING_PASSWORD_PLACEHOLDER/${RECORDING_PASSWORD}/g" /etc/asterisk/extensions.conf
+
+bashio::log.info "✓ Recording system configured on extension ${RECORDING_EXTENSION}"
 
 # Set permissions
 chown -R asterisk:asterisk /etc/asterisk
