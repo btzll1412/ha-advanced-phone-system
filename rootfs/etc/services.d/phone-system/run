@@ -219,8 +219,7 @@ exten => s,1,NoOp(=== Recording System Started ===)
 
 ; Extension 1: Record new message
 exten => 1,1,NoOp(=== Starting Recording ===)
- same => n,Background(custom_prompts/enter_recording_id)
- same => n,Read(RECORDING_ID,,10,,3,10)
+ same => n,Read(RECORDING_ID,custom_prompts/enter_recording_id,10,,3,10)
  same => n,NoOp(Recording ID entered: ${RECORDING_ID})
  same => n,GotoIf($["${RECORDING_ID}" = ""]?1,1)
  same => n,Background(custom_prompts/record_your_message)
@@ -238,7 +237,6 @@ exten => 1,1,NoOp(=== Starting Recording ===)
  same => n,Wait(1)
  same => n,NoOp(Recording complete: ${FULLPATH}.wav)
  same => n,Goto(review,s,1)
-
 ; Extension 2: Listen to messages - Go to Playback Menu
 exten => 2,1,NoOp(=== Going to Playback Menu ===)
  same => n,Goto(playback-menu,s,1)
