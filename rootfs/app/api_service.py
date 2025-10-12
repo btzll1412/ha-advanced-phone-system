@@ -1236,15 +1236,27 @@ async def register_recording(filename: str, recording_id: str):
     try:
         file_path = os.path.join(ASTERISK_SOUNDS, filename)
         
+        # Wait for file to be written
+        import time
+        for i in range(10):
+            if os.path.exists(file_path):
+                break
+            time.sleep(0.5)
+        
         if not os.path.exists(file_path):
-            raise HTTPException(status_code=404, detail="Recording file not found")
+            logger.warning(f"Recording file not found: {file_path}")
+            return {"status": "pending", "message": "Recording will be available shortly"}
+        
+        # Ensure file is not empty
+        file_size = os.path.getsize(file_path)
+        if file_size == 0:
+            logger.error(f"Recording file is empty: {file_path}")
+            return {"status": "error", "message": "Recording file is empty"}
         
         # Get file info
-        file_size = os.path.getsize(file_path)
         created_time = datetime.fromtimestamp(os.path.getctime(file_path))
         
-        # Store metadata in database (optional - you can add a recordings table)
-        logger.info(f"Registered recording: {filename} (ID: {recording_id})")
+        logger.info(f"✓ Registered recording: {filename} (ID: {recording_id}, Size: {file_size} bytes)")
         
         return {
             "status": "success",
@@ -1256,7 +1268,7 @@ async def register_recording(filename: str, recording_id: str):
         
     except Exception as e:
         logger.error(f"Error registering recording: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"status": "error", "message": str(e)}
 
 # ============================================================================
 # START SERVER
