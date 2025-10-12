@@ -143,99 +143,93 @@ exten => s,1,NoOp(=== Recording System Started ===)
  same => n,Set(AUTH_ATTEMPTS=0)
  ; Password Authentication
  same => n(ask_password),Playback(vm-password)
+ same => n,Wait(1)
  same => n,Read(PASSWORD,,4,,10)
  same => n,NoOp(Password entered: ${PASSWORD})
  same => n,GotoIf($["${PASSWORD}" = ""]?ask_password)
  same => n,GotoIf($["${PASSWORD}" = "RECORDING_PASSWORD_PLACEHOLDER"]?authenticated:wrong_password)
  ; Wrong password handling
  same => n(wrong_password),Set(AUTH_ATTEMPTS=$[${AUTH_ATTEMPTS} + 1])
- same => n,NoOp(Wrong password attempt ${AUTH_ATTEMPTS}/3)
  same => n,Playback(vm-incorrect)
  same => n,GotoIf($[${AUTH_ATTEMPTS} >= 3]?auth_failed:ask_password)
  same => n(auth_failed),Playback(vm-goodbye)
  same => n,Hangup()
  ; Authenticated - Show Main Menu
  same => n(authenticated),Playback(auth-thankyou)
- same => n,Set(MENU_ATTEMPTS=0)
- ; Main Menu
- same => n(main_menu),Background(to-record-msg&press-1)
- same => n,Background(or&to-listen-to-it&press-2)
- same => n,Background(to-exit&press-pound)
- same => n,WaitExten(10)
- same => n,Set(MENU_ATTEMPTS=$[${MENU_ATTEMPTS} + 1])
- same => n,GotoIf($[${MENU_ATTEMPTS} >= 3]?menu_timeout:main_menu)
- same => n(menu_timeout),Playback(vm-goodbye)
- same => n,Hangup()
-
-; Option 1: Record New Message
-exten => 1,1,NoOp(=== Recording New Message ===)
- same => n,Set(RECORDING_ID_ATTEMPTS=0)
- same => n(ask_recording_id),Playback(vm-enter-num-to-call)
- same => n,Playback(then-press-pound)
- same => n,Read(RECORDING_ID,beep,10,,,10)
- same => n,NoOp(Recording ID entered: ${RECORDING_ID})
- same => n,GotoIf($["${RECORDING_ID}" = ""]?empty_recording_id:confirm_id)
- ; Empty recording ID
- same => n(empty_recording_id),Set(RECORDING_ID_ATTEMPTS=$[${RECORDING_ID_ATTEMPTS} + 1])
- same => n,Playback(vm-incorrect)
- same => n,GotoIf($[${RECORDING_ID_ATTEMPTS} >= 3]?recording_failed:ask_recording_id)
- ; Confirm and start recording
- same => n(confirm_id),Playback(vm-rec-name)
  same => n,Wait(1)
- same => n,Playback(beep)
+ ; Main Menu
+ same => n(main_menu),Playback(to-record-a-message)
+ same => n,Playback(press-1)
+ same => n,Wait(1)
+ same => n,Playback(to-listen-to-msgs)
+ same => n,Playback(press-2)
+ same => n,Wait(1)
+ same => n,Read(MENU_CHOICE,,1,,5)
+ same => n,NoOp(Menu choice: ${MENU_CHOICE})
+ same => n,GotoIf($["${MENU_CHOICE}" = "1"]?start_recording)
+ same => n,GotoIf($["${MENU_CHOICE}" = "2"]?listen_messages)
+ same => n,Goto(main_menu)
+ ; Option 1: Record New Message
+ same => n(start_recording),Playback(vm-enter-num-to-call)
+ same => n,Playback(followed-by)
+ same => n,Playback(pound)
+ same => n,Wait(1)
+ same => n,Read(RECORDING_ID,beep,10,,,15)
+ same => n,NoOp(Recording ID: ${RECORDING_ID})
+ same => n,GotoIf($["${RECORDING_ID}" = ""]?start_recording)
+ same => n,Playback(pls-record-your-message)
+ same => n,Playback(after-the-tone)
+ same => n,Playback(when-finished)
+ same => n,Playback(press-pound-key)
+ same => n,Wait(1)
  same => n,Set(TIMESTAMP=${STRFTIME(${EPOCH},,%Y%m%d_%H%M%S)})
  same => n,Set(FILENAME=phone_${RECORDING_ID}_${TIMESTAMP})
  same => n,Set(FULLPATH=/var/lib/asterisk/sounds/custom/${FILENAME}.wav)
- same => n,Record(${FULLPATH},0,30,y)
+ same => n,Playback(beep)
+ same => n,Record(${FULLPATH}:wav,,60,y)
  same => n,Wait(1)
- ; Review menu after recording
- same => n(review_menu),Background(to-listen-to-it&press-1)
- same => n,Background(to-send-msg&press-2)
- same => n,Background(to-erase-msg&press-3)
- same => n,WaitExten(10)
+ same => n,NoOp(Recording complete)
+ ; Review Menu
+ same => n(review_menu),Playback(to-listen-to-it)
+ same => n,Playback(press-1)
+ same => n,Wait(1)
+ same => n,Playback(to-re-record)
+ same => n,Playback(press-2)
+ same => n,Wait(1)
+ same => n,Playback(to-save)
+ same => n,Playback(press-3)
+ same => n,Wait(1)
+ same => n,Playback(to-return-to-main-menu)
+ same => n,Playback(press)
+ same => n,Playback(star)
+ same => n,Wait(1)
+ same => n,Read(REVIEW_CHOICE,,1,,10)
+ same => n,NoOp(Review choice: ${REVIEW_CHOICE})
+ same => n,GotoIf($["${REVIEW_CHOICE}" = "1"]?play_recording)
+ same => n,GotoIf($["${REVIEW_CHOICE}" = "2"]?rerecord)
+ same => n,GotoIf($["${REVIEW_CHOICE}" = "3"]?save_recording)
+ same => n,GotoIf($["${REVIEW_CHOICE}" = "*"]?main_menu)
  same => n,Goto(review_menu)
-
-; Review Option 1: Listen to recording
-exten => 11,1,NoOp(=== Playing back recording ===)
- same => n,Playback(${FULLPATH})
- same => n,Goto(1,review_menu)
-
-; Review Option 2: Save recording
-exten => 12,1,NoOp(=== Saving recording ===)
+ ; Play back the recording
+ same => n(play_recording),Playback(${FULLPATH})
+ same => n,Wait(1)
+ same => n,Goto(review_menu)
+ ; Re-record
+ same => n(rerecord),System(rm -f ${FULLPATH})
+ same => n,Goto(start_recording)
+ ; Save recording
+ same => n(save_recording),NoOp(Saving recording ${FILENAME})
  same => n,System(curl -X POST "http://localhost:8088/api/recordings/register?filename=${FILENAME}.wav&recording_id=${RECORDING_ID}" 2>/dev/null)
  same => n,Playback(vm-msgsaved)
+ same => n,Wait(1)
  same => n,Playback(vm-goodbye)
  same => n,Hangup()
+ ; Option 2: Listen to messages (placeholder)
+ same => n(listen_messages),Playback(feature-not-avail-line)
+ same => n,Goto(main_menu)
 
-; Review Option 3: Delete and re-record
-exten => 13,1,NoOp(=== Deleting recording ===)
- same => n,System(rm -f ${FULLPATH})
- same => n,Playback(vm-deleted)
- same => n,Goto(1,ask_recording_id)
-
-; Option 2: Listen to recordings (placeholder for future)
-exten => 2,1,NoOp(=== Listen to Recordings ===)
- same => n,Playback(feature-not-avail-line)
- same => n,Goto(s,main_menu)
-
-; Option #: Exit
-exten => #,1,NoOp(=== User Exit ===)
- same => n,Playback(vm-goodbye)
- same => n,Hangup()
-
-; Timeout or invalid option
-exten => t,1,NoOp(=== Timeout ===)
- same => n,Goto(s,main_menu)
-
-exten => i,1,NoOp(=== Invalid Option ===)
- same => n,Playback(option)
- same => n,Playback(is-invalid)
- same => n,Goto(s,main_menu)
-
-; Recording failed
-exten => recording_failed,1,NoOp(=== Recording Failed ===)
- same => n,Playback(an-error-has-occurred)
- same => n,Playback(vm-goodbye)
+; Timeout handler
+exten => t,1,Playback(vm-goodbye)
  same => n,Hangup()
 
 EOFEXT
@@ -244,6 +238,9 @@ EOFEXT
 sed -i "s/RECORDING_PASSWORD_PLACEHOLDER/${RECORDING_PASSWORD}/g" /etc/asterisk/extensions.conf
 
 bashio::log.info "✓ Recording system with IVR menu configured on extension ${RECORDING_EXTENSION}"
+
+
+
 # Set permissions
 chown -R asterisk:asterisk /etc/asterisk
 chown -R asterisk:asterisk /var/lib/asterisk
