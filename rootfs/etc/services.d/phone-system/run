@@ -101,6 +101,30 @@ else
     bashio::log.warning "SIP trunk disabled - enable in configuration to make calls"
 fi
 
+# ===== ADD CDR CONFIGURATION HERE =====
+# Configure Asterisk CDR (Call Detail Records)
+bashio::log.info "Configuring Call Detail Records..."
+
+cat > /etc/asterisk/cdr_custom.conf <<'EOF'
+[mappings]
+Master.csv => ${CSV_QUOTE(${CDR(clid)})},${CSV_QUOTE(${CDR(src)})},${CSV_QUOTE(${CDR(dst)})},${CSV_QUOTE(${CDR(dcontext)})},${CSV_QUOTE(${CDR(channel)})},${CSV_QUOTE(${CDR(dstchannel)})},${CSV_QUOTE(${CDR(lastapp)})},${CSV_QUOTE(${CDR(lastdata)})},${CSV_QUOTE(${CDR(start)})},${CSV_QUOTE(${CDR(answer)})},${CSV_QUOTE(${CDR(end)})},${CSV_QUOTE(${CDR(duration)})},${CSV_QUOTE(${CDR(billsec)})},${CSV_QUOTE(${CDR(disposition)})},${CSV_QUOTE(${CDR(amaflags)})},${CSV_QUOTE(${CDR(uniqueid)})}
+EOF
+
+cat > /etc/asterisk/cdr.conf <<'EOF'
+[general]
+enable=yes
+unanswered=yes
+
+[csv]
+usegmtime=no
+loguniqueid=yes
+loguserfield=yes
+accountlogs=yes
+EOF
+
+bashio::log.info "✓ CDR configured"
+# ===== END CDR CONFIGURATION =====
+
 # Add extensions
 bashio::log.info "Configuring extensions..."
 EXTENSION_COUNT=$(bashio::config 'extensions|length')
