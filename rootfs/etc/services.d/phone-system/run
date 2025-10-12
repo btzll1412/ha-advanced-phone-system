@@ -109,8 +109,14 @@ for (( i=0; i < EXTENSION_COUNT; i++ )); do
     EXT_NUMBER=$(bashio::config "extensions[${i}].number")
     EXT_NAME=$(bashio::config "extensions[${i}].name")
     EXT_SECRET=$(bashio::config "extensions[${i}].secret")
+    EXT_CALLER_ID=$(bashio::config "extensions[${i}].caller_id")
     
-    bashio::log.info "  - Extension ${EXT_NUMBER}: ${EXT_NAME}"
+    # Use extension-specific caller ID or fall back to trunk default
+    if [ -z "$EXT_CALLER_ID" ]; then
+        EXT_CALLER_ID="${SIP_CALLER}"
+    fi
+    
+    bashio::log.info "  - Extension ${EXT_NUMBER}: ${EXT_NAME} (Caller ID: ${EXT_CALLER_ID})"
     
     cat >> /etc/asterisk/sip.conf <<EOF
 
@@ -126,10 +132,10 @@ qualify=yes
 callgroup=1
 pickupgroup=1
 callerid="${EXT_NAME}" <${EXT_NUMBER}>
+setvar=OUTBOUND_CID=${EXT_CALLER_ID}
 
 EOF
 done
-
 bashio::log.info "✓ ${EXTENSION_COUNT} extension(s) configured"
 bashio::log.info "Recording extension configured: ${RECORDING_EXTENSION}"
 
@@ -305,66 +311,65 @@ exten => _1XX,1,NoOp(=== Internal Call to \${EXTEN} ===)
 exten => ${RECORDING_EXTENSION},1,NoOp(=== Calling Recording System ===)
  same => n,Goto(record-messages,s,1)
 
-; Emergency calls (911)
-exten => 911,1,NoOp(=== Emergency Call to 911 ===)
- same => n,Set(CALLERID(all)=${SIP_CALLER})
- same => n,Dial(SIP/trunk_main/911,120,tT)
- same => n,Hangup()
-
 ; 10-digit US/Canada dialing (NPA-NXX-XXXX)
 exten => _NXXNXXXXXX,1,NoOp(=== Outbound Call to \${EXTEN} ===)
- same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Set(CALLERID(num)=\${OUTBOUND_CID})
  same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
  same => n,Hangup()
 
 ; 11-digit US/Canada dialing (1-NPA-NXX-XXXX)
 exten => _1NXXNXXXXXX,1,NoOp(=== Outbound Call to \${EXTEN} ===)
- same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Set(CALLERID(num)=\${OUTBOUND_CID})
  same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
  same => n,Hangup()
 
 ; International calls (011 + country code + number)
 exten => _011.,1,NoOp(=== International Call to \${EXTEN} ===)
- same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Set(CALLERID(num)=\${OUTBOUND_CID})
  same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
  same => n,Hangup()
 
 ; Toll-free numbers (1-8XX-XXX-XXXX)
 exten => _1800NXXXXXX,1,NoOp(=== Toll-Free Call to \${EXTEN} ===)
- same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Set(CALLERID(num)=\${OUTBOUND_CID})
  same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
  same => n,Hangup()
 
 exten => _1888NXXXXXX,1,NoOp(=== Toll-Free Call to \${EXTEN} ===)
- same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Set(CALLERID(num)=\${OUTBOUND_CID})
  same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
  same => n,Hangup()
 
 exten => _1877NXXXXXX,1,NoOp(=== Toll-Free Call to \${EXTEN} ===)
- same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Set(CALLERID(num)=\${OUTBOUND_CID})
  same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
  same => n,Hangup()
 
 exten => _1866NXXXXXX,1,NoOp(=== Toll-Free Call to \${EXTEN} ===)
- same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Set(CALLERID(num)=\${OUTBOUND_CID})
  same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
  same => n,Hangup()
 
 exten => _1855NXXXXXX,1,NoOp(=== Toll-Free Call to \${EXTEN} ===)
- same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Set(CALLERID(num)=\${OUTBOUND_CID})
  same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
  same => n,Hangup()
 
 exten => _1844NXXXXXX,1,NoOp(=== Toll-Free Call to \${EXTEN} ===)
- same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Set(CALLERID(num)=\${OUTBOUND_CID})
  same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
  same => n,Hangup()
 
 exten => _1833NXXXXXX,1,NoOp(=== Toll-Free Call to \${EXTEN} ===)
- same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Set(CALLERID(num)=\${OUTBOUND_CID})
  same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
  same => n,Hangup()
 
+; Emergency calls (911)
+exten => 911,1,NoOp(=== Emergency Call to 911 ===)
+ same => n,Set(CALLERID(num)=\${OUTBOUND_CID})
+ same => n,Dial(SIP/trunk_main/911,120,tT)
+ same => n,Hangup()
 EOF
 
 bashio::log.info "✓ Internal context with outbound calling configured"
