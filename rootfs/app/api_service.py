@@ -1179,21 +1179,52 @@ async def delete_recording(filename: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/recordings/play/{filename}")
-async def play_recording(filename: str):
+async def play_recording(filename: str, request: Request):
+    """Stream a recording file"""
     try:
         file_path = os.path.join(ASTERISK_SOUNDS, filename)
         
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="Recording not found")
         
+        # Get file size
+        file_size = os.path.getsize(file_path)
+        
+        # Parse range header for streaming
+        range_header = request.headers.get("range")
+        
+        if range_header:
+            # Handle range requests for audio streaming
+            range_match = range_header.replace("bytes=", "").split("-")
+            start = int(range_match[0]) if range_match[0] else 0
+            end = int(range_match[1]) if len(range_match) > 1 and range_match[1] else file_size - 1
+            
+            chunk_size = end - start + 1
+            
+            def iterfile():
+                with open(file_path, "rb") as f:
+                    f.seek(start)
+                    yield f.read(chunk_size)
+            
+            headers = {
+                "Content-Range": f"bytes {start}-{end}/{file_size}",
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(chunk_size),
+                "Content-Type": "audio/wav",
+            }
+            
+            return StreamingResponse(iterfile(), status_code=206, headers=headers)
+        
+        # No range header - send entire file
         return FileResponse(
             file_path,
-            media_type='audio/wav',
-            filename=filename
+            media_type="audio/wav",
+            headers={
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(file_size)
+            }
         )
         
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Error playing recording: {e}")
         raise HTTPException(status_code=500, detail=str(e))
