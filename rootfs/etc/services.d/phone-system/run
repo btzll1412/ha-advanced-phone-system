@@ -132,10 +132,10 @@ bashio::log.info "Recording extension configured: ${RECORDING_EXTENSION}"
 # Add recording extension context to extensions.conf
 bashio::log.info "Configuring recording system..."
 
-# Create custom prompt files using better TTS
+# Create custom prompt files using Google TTS
 mkdir -p /var/lib/asterisk/sounds/custom_prompts
 
-# Generate custom prompts using Google TTS (better quality than espeak)
+# Generate custom prompts using Google TTS
 python3 << 'PYTHON_EOF'
 from gtts import gTTS
 import os
@@ -192,17 +192,19 @@ exten => s,1,NoOp(=== Recording System Started ===)
  ; Authenticated - Show Main Menu
  same => n(authenticated),Playback(auth-thankyou)
  same => n,Wait(1)
- ; Main Menu - Use Background for interruptible prompts
+ ; Main Menu
  same => n(main_menu),Background(custom_prompts/to_record_message)
  same => n,Background(custom_prompts/to_listen)
  same => n,WaitExten(5)
  same => n,Goto(main_menu)
- ; Option 1: Record New Message
- same => n(start_recording),Playback(custom_prompts/enter_recording_id)
+
+; Extension 1: Record new message
+exten => 1,1,NoOp(=== Starting Recording ===)
+ same => n,Playback(custom_prompts/enter_recording_id)
  same => n,Wait(1)
  same => n,Read(RECORDING_ID,beep,10,,,15)
  same => n,NoOp(Recording ID: ${RECORDING_ID})
- same => n,GotoIf($["${RECORDING_ID}" = ""]?start_recording)
+ same => n,GotoIf($["${RECORDING_ID}" = ""]?1,1)
  same => n,Playback(custom_prompts/record_your_message)
  same => n,Wait(1)
  same => n,Set(TIMESTAMP=${STRFTIME(${EPOCH},,%Y%m%d_%H%M%S)})
@@ -212,53 +214,64 @@ exten => s,1,NoOp(=== Recording System Started ===)
  same => n,Record(${FULLPATH}.wav,,60)
  same => n,Wait(1)
  same => n,NoOp(Recording complete: ${FULLPATH}.wav)
+ same => n,Goto(review,s,1)
 
-; Extension 1: Menu option to record
-exten => 1,1,Goto(s,start_recording)
+; Extension 2: Listen to messages
+exten => 2,1,NoOp(=== Listen to Messages ===)
+ same => n,Playback(feature-not-avail-line)
+ same => n,Goto(s,main_menu)
 
-; Extension 2: Menu option to listen  
-exten => 2,1,Goto(s,listen_messages)
+; Timeout handler
+exten => t,1,NoOp(=== Timeout ===)
+ same => n,Goto(s,main_menu)
 
-; Continue in extension s for review menu
-exten => s,n(review_menu),Background(custom_prompts/replay_recording)
+; Invalid option
+exten => i,1,Playback(option)
+ same => n,Playback(is-invalid)
+ same => n,Goto(s,main_menu)
+
+; ============================================
+; Review Menu Context
+; ============================================
+[review]
+exten => s,1,NoOp(=== Review Menu ===)
+ same => n,Background(custom_prompts/replay_recording)
  same => n,Background(custom_prompts/rerecord)
  same => n,Background(custom_prompts/save_recording)
  same => n,Background(custom_prompts/main_menu)
  same => n,WaitExten(10)
- same => n,Goto(review_menu)
+ same => n,Goto(s,1)
 
-; Review menu options (use extension 11, 12, 13 to avoid conflicts)
-exten => 11,1,NoOp(=== Playing back recording ===)
+; Option 1: Replay recording
+exten => 1,1,NoOp(=== Playing Recording ===)
  same => n,Playback(${FULLPATH})
  same => n,Wait(1)
- same => n,Goto(s,review_menu)
+ same => n,Goto(s,1)
 
-exten => 12,1,NoOp(=== Re-recording ===)
+; Option 2: Re-record
+exten => 2,1,NoOp(=== Re-recording ===)
  same => n,System(rm -f ${FULLPATH}.wav)
- same => n,Goto(s,start_recording)
+ same => n,Goto(record-messages,1,1)
 
-exten => 13,1,NoOp(=== Saving recording ===)
+; Option 3: Save recording
+exten => 3,1,NoOp(=== Saving Recording ===)
  same => n,System(curl -X POST "http://localhost:8088/api/recordings/register?filename=${FILENAME}.wav&recording_id=${RECORDING_ID}" 2>/dev/null)
  same => n,Playback(vm-msgsaved)
  same => n,Wait(1)
  same => n,Playback(vm-goodbye)
  same => n,Hangup()
 
-exten => *,1,NoOp(=== Back to main menu ===)
- same => n,Goto(s,main_menu)
+; Option *: Back to main menu
+exten => *,1,NoOp(=== Back to Main Menu ===)
+ same => n,Goto(record-messages,s,main_menu)
 
-; Listen to messages (placeholder)
-exten => s,n(listen_messages),Playback(feature-not-avail-line)
- same => n,Goto(main_menu)
+; Timeout
+exten => t,1,Goto(s,1)
 
-; Timeout handler
-exten => t,1,Playback(vm-goodbye)
- same => n,Hangup()
-
-; Invalid option
+; Invalid
 exten => i,1,Playback(option)
  same => n,Playback(is-invalid)
- same => n,Goto(s,main_menu)
+ same => n,Goto(s,1)
 
 EOFEXT
 
