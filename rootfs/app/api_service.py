@@ -19,6 +19,10 @@ from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import aiofiles
+import pwd
+import grp
+import hashlib
+from gtts import gTTS
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -242,45 +246,51 @@ def get_db():
     return conn
 
 async def generate_tts(text: str) -> Optional[str]:
-    """Generate TTS audio file using espeak"""
+    """Generate TTS audio file using Google TTS"""
     try:
-        filename = f"tts_{uuid.uuid4().hex}.wav"
-        temp_path = f"/tmp/tts_{uuid.uuid4().hex}.wav"
+        import hashlib
+        from gtts import gTTS
+        
+        # Create hash of text for consistent filenames
+        text_hash = hashlib.md5(text.encode()).hexdigest()
+        filename = f"tts_{text_hash}.wav"
         output_path = os.path.join(ASTERISK_SOUNDS, filename)
         
-        logger.info(f"TTS requested: {text[:50]}...")
+        # Check if file already exists
+        if os.path.exists(output_path):
+            logger.info(f"TTS file already exists: {filename}")
+            return filename.replace('.wav', '')
         
-        # Generate with espeak
-        result = subprocess.run(
-            ['espeak', '-w', temp_path, '-v', 'en+m3', '-s', '160', '-p', '50', text],
+        logger.info(f"Generating TTS: {text[:50]}...")
+        
+        # Generate TTS using Google
+        mp3_path = output_path.replace('.wav', '.mp3')
+        tts = gTTS(text=text, lang='en', slow=False)
+        tts.save(mp3_path)
+        
+        # Convert MP3 to 8kHz WAV (telephony standard)
+        convert_result = subprocess.run(
+            ['sox', mp3_path, '-r', '8000', '-c', '1', output_path],
             capture_output=True,
             check=False
         )
         
-        if result.returncode == 0 and os.path.exists(temp_path):
-            # Convert to 8kHz WAV (telephony standard) with 16-bit quality
-            convert_result = subprocess.run(
-                ['sox', temp_path, '-r', '8000', '-c', '1', '-b', '16', output_path],
-                capture_output=True,
-                check=False
-            )
-            
+        # Clean up MP3
+        if os.path.exists(mp3_path):
+            os.remove(mp3_path)
+        
+        if convert_result.returncode == 0 and os.path.exists(output_path):
             subprocess.run(['chown', 'asterisk:asterisk', output_path], check=False)
-            os.remove(temp_path)
-            
-            if convert_result.returncode == 0 and os.path.exists(output_path):
-                logger.info(f"✓ TTS file created: {filename}")
-                return filename.replace('.wav', '')
-            else:
-                logger.error(f"Audio conversion failed")
-                return None
+            logger.info(f"✓ TTS file created: {filename}")
+            return filename.replace('.wav', '')
         else:
-            logger.error(f"TTS generation failed")
+            logger.error(f"Audio conversion failed: {convert_result.stderr}")
             return None
             
     except Exception as e:
         logger.error(f"Error generating TTS: {e}")
         return None
+
 
 def create_call_file(phone_number: str, audio_file: str, caller_id: str = None, 
                     call_id: str = None, max_retries: int = 3, 
