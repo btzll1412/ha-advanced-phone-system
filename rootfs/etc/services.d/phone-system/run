@@ -239,12 +239,9 @@ exten => 1,1,NoOp(=== Starting Recording ===)
  same => n,NoOp(Recording complete: ${FULLPATH}.wav)
  same => n,Goto(review,s,1)
 
-; Extension 2: Listen to messages - Main Playback Menu
-exten => 2,1,NoOp(=== Listen to Messages Menu ===)
- same => n,Background(custom_prompts/listen_by_id)
- same => n,Background(custom_prompts/listen_all)
- same => n,WaitExten(10)
- same => n,Goto(2,1)
+; Extension 2: Listen to messages - Go to Playback Menu
+exten => 2,1,NoOp(=== Going to Playback Menu ===)
+ same => n,Goto(playback-menu,s,1)
 
 ; Timeout handler
 exten => t,1,NoOp(=== Timeout ===)
@@ -306,6 +303,13 @@ cat >> /etc/asterisk/extensions.conf << 'EOFEXT2'
 ; Playback Menu Context
 ; ============================================
 [playback-menu]
+; Entry point - main menu
+exten => s,1,NoOp(=== Playback Menu Started ===)
+ same => n(menu),Background(custom_prompts/listen_by_id)
+ same => n,Background(custom_prompts/listen_all)
+ same => n,WaitExten(10)
+ same => n,Goto(menu)
+
 ; Option 1: Listen by Recording ID
 exten => 1,1,NoOp(=== Listen by Recording ID ===)
  same => n(ask_id),Background(custom_prompts/enter_recording_id)
@@ -366,7 +370,7 @@ exten => t,1,NoOp(=== Playback Timeout ===)
 exten => i,1,NoOp(=== Invalid Option in Playback ===)
  same => n,Playback(option)
  same => n,Playback(is-invalid)
- same => n,Goto(record-messages,2,1)
+ same => n,Goto(s,menu)
 
 EOFEXT2
 
