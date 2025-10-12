@@ -159,7 +159,16 @@ prompts = {
     "rerecord": "To re-record, press 2",
     "save_recording": "To save this recording, press 3",
     "main_menu": "To go back to the main menu, press star",
-    "password": "Please enter your password"
+    "password": "Please enter your password",
+    "auth-thankyou": "Thank you",
+    "feature-not-avail-line": "This feature is not available",
+    "vm-msgsaved": "Your message has been saved",
+    "vm-goodbye": "Goodbye",
+    "vm-incorrect": "Incorrect password",
+    "listen_by_id": "To listen to a specific recording, press 1",
+    "listen_all": "To listen to all recordings, press 2",
+    "recording_not_found": "Recording not found. Please try again",
+    "all_recordings_played": "All recordings have been played"
 }
 
 for name, text in prompts.items():
@@ -230,10 +239,12 @@ exten => 1,1,NoOp(=== Starting Recording ===)
  same => n,NoOp(Recording complete: ${FULLPATH}.wav)
  same => n,Goto(review,s,1)
 
-; Extension 2: Listen to messages
-exten => 2,1,NoOp(=== Listen to Messages ===)
- same => n,Playback(feature-not-avail-line)
- same => n,Goto(s,main_menu)
+; Extension 2: Listen to messages - Main Playback Menu
+exten => 2,1,NoOp(=== Listen to Messages Menu ===)
+ same => n,Background(custom_prompts/listen_by_id)
+ same => n,Background(custom_prompts/listen_all)
+ same => n,WaitExten(10)
+ same => n,Goto(2,1)
 
 ; Timeout handler
 exten => t,1,NoOp(=== Timeout ===)
@@ -288,6 +299,76 @@ exten => i,1,Playback(option)
  same => n,Goto(s,1)
 
 EOFEXT
+
+cat >> /etc/asterisk/extensions.conf << 'EOFEXT2'
+
+; ============================================
+; Playback Menu Context
+; ============================================
+[playback-menu]
+; Option 1: Listen by Recording ID
+exten => 1,1,NoOp(=== Listen by Recording ID ===)
+ same => n(ask_id),Background(custom_prompts/enter_recording_id)
+ same => n,Read(PLAYBACK_ID,,10,,3,10)
+ same => n,NoOp(User wants to hear recording ID: ${PLAYBACK_ID})
+ same => n,GotoIf($["${PLAYBACK_ID}" = ""]?ask_id)
+ same => n,System(ls /var/lib/asterisk/sounds/custom/phone_${PLAYBACK_ID}_*.wav 2>/dev/null | head -1 > /tmp/play_file_${UNIQUEID}.txt)
+ same => n,Set(PLAY_FILE=${FILE(/tmp/play_file_${UNIQUEID}.txt)})
+ same => n,System(rm -f /tmp/play_file_${UNIQUEID}.txt)
+ same => n,GotoIf($["${PLAY_FILE}" = ""]?no_recording)
+ same => n,System(basename ${PLAY_FILE} .wav > /tmp/play_basename_${UNIQUEID}.txt)
+ same => n,Set(PLAY_BASE=${FILE(/tmp/play_basename_${UNIQUEID}.txt)})
+ same => n,System(rm -f /tmp/play_basename_${UNIQUEID}.txt)
+ same => n,Playback(/var/lib/asterisk/sounds/custom/${PLAY_BASE})
+ same => n,Wait(1)
+ same => n,Playback(beep)
+ same => n,Goto(record-messages,s,main_menu)
+ same => n(no_recording),Playback(custom_prompts/recording_not_found)
+ same => n,Wait(1)
+ same => n,Goto(ask_id)
+
+; Option 2: Listen to all recordings (newest to oldest)
+exten => 2,1,NoOp(=== Listen to All Recordings ===)
+ same => n,System(ls -t /var/lib/asterisk/sounds/custom/phone_*.wav 2>/dev/null > /tmp/all_recordings_${UNIQUEID}.txt)
+ same => n,Set(RECORDING_LIST=/tmp/all_recordings_${UNIQUEID}.txt)
+ same => n,Set(CURRENT_LINE=1)
+ same => n,Goto(play_next)
+ same => n(play_next),NoOp(Playing recording line ${CURRENT_LINE})
+ same => n,System(sed -n '${CURRENT_LINE}p' ${RECORDING_LIST} > /tmp/current_rec_${UNIQUEID}.txt)
+ same => n,Set(CURRENT_FILE=${FILE(/tmp/current_rec_${UNIQUEID}.txt)})
+ same => n,System(rm -f /tmp/current_rec_${UNIQUEID}.txt)
+ same => n,GotoIf($["${CURRENT_FILE}" = ""]?all_done)
+ same => n,System(basename ${CURRENT_FILE} .wav > /tmp/current_base_${UNIQUEID}.txt)
+ same => n,Set(CURRENT_BASE=${FILE(/tmp/current_base_${UNIQUEID}.txt)})
+ same => n,System(rm -f /tmp/current_base_${UNIQUEID}.txt)
+ same => n,NoOp(Playing: ${CURRENT_BASE})
+ same => n,Background(/var/lib/asterisk/sounds/custom/${CURRENT_BASE})
+ same => n,WaitExten(2)
+ same => n,Playback(beep)
+ same => n,Set(CURRENT_LINE=$[${CURRENT_LINE} + 1])
+ same => n,Goto(play_next)
+ same => n(all_done),System(rm -f ${RECORDING_LIST})
+ same => n,Playback(custom_prompts/all_recordings_played)
+ same => n,Wait(1)
+ same => n,Goto(record-messages,s,main_menu)
+
+; Star key: Back to main menu (during playback)
+exten => *,1,NoOp(=== Returning to Main Menu ===)
+ same => n,System(rm -f /tmp/all_recordings_${UNIQUEID}.txt /tmp/current_rec_${UNIQUEID}.txt /tmp/current_base_${UNIQUEID}.txt)
+ same => n,Goto(record-messages,s,main_menu)
+
+; Timeout handler
+exten => t,1,NoOp(=== Playback Timeout ===)
+ same => n,Set(CURRENT_LINE=$[${CURRENT_LINE} + 1])
+ same => n,Goto(2,play_next)
+
+; Invalid option
+exten => i,1,NoOp(=== Invalid Option in Playback ===)
+ same => n,Playback(option)
+ same => n,Playback(is-invalid)
+ same => n,Goto(record-messages,2,1)
+
+EOFEXT2
 
 # Replace password placeholder with actual password
 sed -i "s/RECORDING_PASSWORD_PLACEHOLDER/${RECORDING_PASSWORD}/g" /etc/asterisk/extensions.conf
