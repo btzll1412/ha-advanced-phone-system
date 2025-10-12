@@ -311,10 +311,10 @@ exten => _1XX,1,NoOp(=== Internal Call to \${EXTEN} ===)
 exten => ${RECORDING_EXTENSION},1,NoOp(=== Calling Recording System ===)
  same => n,Goto(record-messages,s,1)
 
-; 10-digit US/Canada dialing (NPA-NXX-XXXX)
-exten => _NXXNXXXXXX,1,NoOp(=== Outbound Call to \${EXTEN} ===)
+; 10-digit US/Canada dialing - auto-prepend 1
+exten => _NXXNXXXXXX,1,NoOp(=== Outbound Call to 1\${EXTEN} ===)
  same => n,Set(CALLERID(num)=\${OUTBOUND_CID})
- same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
+ same => n,Dial(SIP/trunk_main/1\${EXTEN},120,tT)
  same => n,Hangup()
 
 ; 11-digit US/Canada dialing (1-NPA-NXX-XXXX)
