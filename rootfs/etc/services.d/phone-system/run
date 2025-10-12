@@ -31,32 +31,36 @@ cat > /etc/asterisk/sip.conf <<'EOF'
 [general]
 context=default
 allowoverlap=no
-udpbindaddr=0.0.0.0
+udpbindaddr=0.0.0.0:5060
 tcpenable=yes
 tcpbindaddr=0.0.0.0
-transport=udp
+transport=udp,tcp
 srvlookup=yes
 allowguest=no
 alwaysauthreject=yes
 nat=force_rport,comedia
 externrefresh=10
 
-; Codecs
+; Codecs - Order matters!
 disallow=all
 allow=ulaw
 allow=alaw
-allow=g729
 allow=gsm
 
 ; RTP Settings
 rtpstart=10000
 rtpend=10099
+rtptimeout=60
+rtpholdtimeout=300
 
 ; Security
-requirecalltoken=yes
+requirecalltoken=no
+
+; Audio settings
+directmedia=no
+canreinvite=no
 
 EOF
-
 # Add SIP trunk if enabled
 if [ "$SIP_ENABLED" = "true" ]; then
     bashio::log.info "Configuring SIP trunk: ${SIP_PROVIDER}"
