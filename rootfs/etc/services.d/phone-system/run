@@ -288,6 +288,89 @@ sed -i "s/RECORDING_PASSWORD_PLACEHOLDER/${RECORDING_PASSWORD}/g" /etc/asterisk/
 
 bashio::log.info "✓ Recording system with high-quality TTS prompts configured on extension ${RECORDING_EXTENSION}"
 
+# Add internal context with outbound calling
+bashio::log.info "Configuring internal extensions and outbound calling..."
+cat >> /etc/asterisk/extensions.conf << EOF
+
+; ============================================
+; Internal Context - Extensions and Outbound
+; ============================================
+[internal]
+; Internal extension-to-extension calls
+exten => _1XX,1,NoOp(=== Internal Call to \${EXTEN} ===)
+ same => n,Dial(SIP/\${EXTEN},30,tr)
+ same => n,Hangup()
+
+; Recording system extension
+exten => ${RECORDING_EXTENSION},1,NoOp(=== Calling Recording System ===)
+ same => n,Goto(record-messages,s,1)
+
+; Emergency calls (911)
+exten => 911,1,NoOp(=== Emergency Call to 911 ===)
+ same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Dial(SIP/trunk_main/911,120,tT)
+ same => n,Hangup()
+
+; 10-digit US/Canada dialing (NPA-NXX-XXXX)
+exten => _NXXNXXXXXX,1,NoOp(=== Outbound Call to \${EXTEN} ===)
+ same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
+ same => n,Hangup()
+
+; 11-digit US/Canada dialing (1-NPA-NXX-XXXX)
+exten => _1NXXNXXXXXX,1,NoOp(=== Outbound Call to \${EXTEN} ===)
+ same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
+ same => n,Hangup()
+
+; International calls (011 + country code + number)
+exten => _011.,1,NoOp(=== International Call to \${EXTEN} ===)
+ same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
+ same => n,Hangup()
+
+; Toll-free numbers (1-8XX-XXX-XXXX)
+exten => _1800NXXXXXX,1,NoOp(=== Toll-Free Call to \${EXTEN} ===)
+ same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
+ same => n,Hangup()
+
+exten => _1888NXXXXXX,1,NoOp(=== Toll-Free Call to \${EXTEN} ===)
+ same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
+ same => n,Hangup()
+
+exten => _1877NXXXXXX,1,NoOp(=== Toll-Free Call to \${EXTEN} ===)
+ same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
+ same => n,Hangup()
+
+exten => _1866NXXXXXX,1,NoOp(=== Toll-Free Call to \${EXTEN} ===)
+ same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
+ same => n,Hangup()
+
+exten => _1855NXXXXXX,1,NoOp(=== Toll-Free Call to \${EXTEN} ===)
+ same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
+ same => n,Hangup()
+
+exten => _1844NXXXXXX,1,NoOp(=== Toll-Free Call to \${EXTEN} ===)
+ same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
+ same => n,Hangup()
+
+exten => _1833NXXXXXX,1,NoOp(=== Toll-Free Call to \${EXTEN} ===)
+ same => n,Set(CALLERID(all)=${SIP_CALLER})
+ same => n,Dial(SIP/trunk_main/\${EXTEN},120,tT)
+ same => n,Hangup()
+
+EOF
+
+bashio::log.info "✓ Internal context with outbound calling configured"
+
+# Set permissions
+
 # Set permissions
 chown -R asterisk:asterisk /etc/asterisk
 chown -R asterisk:asterisk /var/lib/asterisk
