@@ -131,6 +131,28 @@ bashio::log.info "Recording extension configured: ${RECORDING_EXTENSION}"
 
 # Add recording extension context to extensions.conf
 bashio::log.info "Configuring recording system..."
+
+# First, create custom prompt files using TTS
+mkdir -p /var/lib/asterisk/sounds/custom_prompts
+
+# Generate custom prompts using espeak (already installed)
+espeak -v en-us -s 150 -w /var/lib/asterisk/sounds/custom_prompts/enter_recording_id.wav "Please enter your recording I D, followed by the pound key"
+espeak -v en-us -s 150 -w /var/lib/asterisk/sounds/custom_prompts/record_your_message.wav "Please record your message after the beep. When finished, press the pound key"
+espeak -v en-us -s 150 -w /var/lib/asterisk/sounds/custom_prompts/to_record_message.wav "To record a message, press 1"
+espeak -v en-us -s 150 -w /var/lib/asterisk/sounds/custom_prompts/to_listen.wav "To listen to messages, press 2"
+espeak -v en-us -s 150 -w /var/lib/asterisk/sounds/custom_prompts/replay_recording.wav "To replay this recording, press 1"
+espeak -v en-us -s 150 -w /var/lib/asterisk/sounds/custom_prompts/rerecord.wav "To re-record, press 2"
+espeak -v en-us -s 150 -w /var/lib/asterisk/sounds/custom_prompts/save_recording.wav "To save this recording, press 3"
+espeak -v en-us -s 150 -w /var/lib/asterisk/sounds/custom_prompts/main_menu.wav "To go back to the main menu, press star"
+
+# Convert to ulaw format for Asterisk
+for file in /var/lib/asterisk/sounds/custom_prompts/*.wav; do
+    sox "$file" -r 8000 -c 1 -t ul "${file%.wav}.ulaw"
+    rm "$file"
+done
+
+chown -R asterisk:asterisk /var/lib/asterisk/sounds/custom_prompts
+
 cat >> /etc/asterisk/extensions.conf << 'EOFEXT'
 
 ; ============================================
@@ -158,16 +180,9 @@ exten => s,1,NoOp(=== Recording System Started ===)
  same => n(authenticated),Playback(auth-thankyou)
  same => n,Wait(1)
  ; Main Menu
- same => n(main_menu),Playback(for)
- same => n,Playback(new)
- same => n,Playback(message)
- same => n,Playback(press)
- same => n,Playback(digits/1)
+ same => n(main_menu),Playback(custom_prompts/to_record_message)
  same => n,Wait(1)
- same => n,Playback(for)
- same => n,Playback(directory)
- same => n,Playback(press)
- same => n,Playback(digits/2)
+ same => n,Playback(custom_prompts/to_listen)
  same => n,Wait(1)
  same => n,Read(MENU_CHOICE,,1,,5)
  same => n,NoOp(Menu choice: ${MENU_CHOICE})
@@ -175,24 +190,12 @@ exten => s,1,NoOp(=== Recording System Started ===)
  same => n,GotoIf($["${MENU_CHOICE}" = "2"]?listen_messages)
  same => n,Goto(main_menu)
  ; Option 1: Record New Message
- same => n(start_recording),Playback(please)
- same => n,Playback(enter)
- same => n,Playback(recording)
- same => n,Playback(i-d)
- same => n,Playback(followed-by)
- same => n,Playback(pound)
+ same => n(start_recording),Playback(custom_prompts/enter_recording_id)
  same => n,Wait(1)
  same => n,Read(RECORDING_ID,beep,10,,,15)
  same => n,NoOp(Recording ID: ${RECORDING_ID})
  same => n,GotoIf($["${RECORDING_ID}" = ""]?start_recording)
- same => n,Playback(please)
- same => n,Playback(record)
- same => n,Playback(your)
- same => n,Playback(message)
- same => n,Playback(after-the-tone)
- same => n,Playback(when-finished)
- same => n,Playback(press)
- same => n,Playback(pound)
+ same => n,Playback(custom_prompts/record_your_message)
  same => n,Wait(1)
  same => n,Set(TIMESTAMP=${STRFTIME(${EPOCH},,%Y%m%d_%H%M%S)})
  same => n,Set(FILENAME=phone_${RECORDING_ID}_${TIMESTAMP})
@@ -202,26 +205,13 @@ exten => s,1,NoOp(=== Recording System Started ===)
  same => n,Wait(1)
  same => n,NoOp(Recording complete)
  ; Review Menu
- same => n(review_menu),Playback(to-listen-to-it)
- same => n,Playback(press)
- same => n,Playback(digits/1)
+ same => n(review_menu),Playback(custom_prompts/replay_recording)
  same => n,Wait(1)
- same => n,Playback(to)
- same => n,Playback(re-record)
- same => n,Playback(press)
- same => n,Playback(digits/2)
+ same => n,Playback(custom_prompts/rerecord)
  same => n,Wait(1)
- same => n,Playback(to)
- same => n,Playback(save)
- same => n,Playback(vm-messages)
- same => n,Playback(press)
- same => n,Playback(digits/3)
+ same => n,Playback(custom_prompts/save_recording)
  same => n,Wait(1)
- same => n,Playback(to-call-back)
- same => n,Playback(main)
- same => n,Playback(menu)
- same => n,Playback(press)
- same => n,Playback(star)
+ same => n,Playback(custom_prompts/main_menu)
  same => n,Wait(1)
  same => n,Read(REVIEW_CHOICE,,1,,10)
  same => n,NoOp(Review choice: ${REVIEW_CHOICE})
@@ -257,7 +247,7 @@ EOFEXT
 # Replace password placeholder with actual password
 sed -i "s/RECORDING_PASSWORD_PLACEHOLDER/${RECORDING_PASSWORD}/g" /etc/asterisk/extensions.conf
 
-bashio::log.info "✓ Recording system with IVR menu configured on extension ${RECORDING_EXTENSION}"
+bashio::log.info "✓ Recording system with custom TTS prompts configured on extension ${RECORDING_EXTENSION}"
 
 
 
