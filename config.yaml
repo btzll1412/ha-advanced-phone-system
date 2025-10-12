@@ -34,6 +34,7 @@ options:
     - number: "100"
       name: "Home Assistant"
       secret: "changeme123"
+      caller_id: ""
   contact_groups:
     - name: "Family"
       numbers: []
@@ -62,6 +63,7 @@ schema:
     - number: str
       name: str
       secret: password
+      caller_id: str?
   contact_groups:
     - name: str
       numbers: [str]
