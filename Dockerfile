@@ -21,7 +21,8 @@ RUN pip3 install --no-cache-dir \
     aiofiles \
     pydantic \
     python-multipart \
-    requests
+    requests \
+    gtts
 
 # Create necessary directories
 RUN mkdir -p /data/database \
