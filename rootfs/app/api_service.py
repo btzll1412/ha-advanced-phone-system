@@ -1200,6 +1200,9 @@ async def play_recording(filename: str, request: Request):
         # Get file size
         file_size = os.path.getsize(file_path)
         
+        if file_size < 100:
+            raise HTTPException(status_code=400, detail="Recording file is empty or corrupted")
+        
         # Parse range header for streaming
         range_header = request.headers.get("range")
         
