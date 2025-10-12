@@ -134,70 +134,108 @@ bashio::log.info "Configuring recording system..."
 cat >> /etc/asterisk/extensions.conf << 'EOFEXT'
 
 ; ============================================
-; Recording System
+; Recording System with IVR Menu
 ; ============================================
 [record-messages]
-exten => s,1,NoOp(=== Recording System ===)
+exten => s,1,NoOp(=== Recording System Started ===)
  same => n,Answer()
  same => n,Wait(1)
- same => n,Playback(hello)
- same => n,Playback(pls-enter-your-pin)
- same => n,Set(WRONG_ATTEMPTS=0)
- same => n,Set(EMPTY_ATTEMPTS=0)
- same => n(ask_password),Wait(2)
+ same => n,Set(AUTH_ATTEMPTS=0)
+ ; Password Authentication
+ same => n(ask_password),Playback(vm-password)
  same => n,Read(PASSWORD,,4,,10)
  same => n,NoOp(Password entered: ${PASSWORD})
- ; Check if password is empty
- same => n,GotoIf($["${PASSWORD}" = ""]?empty_password:check_password)
- ; Handle empty password
- same => n(empty_password),Set(EMPTY_ATTEMPTS=$[${EMPTY_ATTEMPTS} + 1])
- same => n,NoOp(Empty password attempt ${EMPTY_ATTEMPTS}/3)
- same => n,Playback(pls-enter-your-pin)
- same => n,GotoIf($[${EMPTY_ATTEMPTS} >= 3]?too_many_empty:ask_password)
- ; Check if password is correct
- same => n(check_password),GotoIf($["${PASSWORD}" = "RECORDING_PASSWORD_PLACEHOLDER"]?authorized:wrong_password)
- ; Handle wrong password
- same => n(wrong_password),Set(WRONG_ATTEMPTS=$[${WRONG_ATTEMPTS} + 1])
- same => n,NoOp(Wrong password attempt ${WRONG_ATTEMPTS}/5)
+ same => n,GotoIf($["${PASSWORD}" = ""]?ask_password)
+ same => n,GotoIf($["${PASSWORD}" = "RECORDING_PASSWORD_PLACEHOLDER"]?authenticated:wrong_password)
+ ; Wrong password handling
+ same => n(wrong_password),Set(AUTH_ATTEMPTS=$[${AUTH_ATTEMPTS} + 1])
+ same => n,NoOp(Wrong password attempt ${AUTH_ATTEMPTS}/3)
  same => n,Playback(vm-incorrect)
- same => n,Playback(pls-try-again)
- same => n,GotoIf($[${WRONG_ATTEMPTS} >= 5]?too_many_wrong:ask_password)
- ; Too many wrong attempts
- same => n(too_many_wrong),Playback(vm-goodbye)
+ same => n,GotoIf($[${AUTH_ATTEMPTS} >= 3]?auth_failed:ask_password)
+ same => n(auth_failed),Playback(vm-goodbye)
  same => n,Hangup()
- ; Too many empty attempts
- same => n(too_many_empty),Playback(vm-goodbye)
+ ; Authenticated - Show Main Menu
+ same => n(authenticated),Playback(auth-thankyou)
+ same => n,Set(MENU_ATTEMPTS=0)
+ ; Main Menu
+ same => n(main_menu),Background(to-record-msg&press-1)
+ same => n,Background(or&to-listen-to-it&press-2)
+ same => n,Background(to-exit&press-pound)
+ same => n,WaitExten(10)
+ same => n,Set(MENU_ATTEMPTS=$[${MENU_ATTEMPTS} + 1])
+ same => n,GotoIf($[${MENU_ATTEMPTS} >= 3]?menu_timeout:main_menu)
+ same => n(menu_timeout),Playback(vm-goodbye)
  same => n,Hangup()
- ; Password correct - proceed to recording
- same => n(authorized),Playback(auth-thankyou)
- same => n,Set(RECORDING_ATTEMPTS=0)
- same => n,Wait(1)
- same => n,Playback(to-enter-a-number)
- same => n,Playback(press)
- same => n,Playback(digits/1)
- same => n(ask_recording_id),Wait(2)
- same => n,Read(RECORDING_ID,,10,,15)
+
+; Option 1: Record New Message
+exten => 1,1,NoOp(=== Recording New Message ===)
+ same => n,Set(RECORDING_ID_ATTEMPTS=0)
+ same => n(ask_recording_id),Playback(vm-enter-num-to-call)
+ same => n,Playback(then-press-pound)
+ same => n,Read(RECORDING_ID,beep,10,,,10)
  same => n,NoOp(Recording ID entered: ${RECORDING_ID})
- ; Check if recording ID is empty
- same => n,GotoIf($["${RECORDING_ID}" = ""]?empty_recording_id:start_recording)
- ; Handle empty recording ID
- same => n(empty_recording_id),Set(RECORDING_ATTEMPTS=$[${RECORDING_ATTEMPTS} + 1])
- same => n,NoOp(Empty recording ID attempt ${RECORDING_ATTEMPTS}/3)
- same => n,Playback(pls-try-again)
- same => n,GotoIf($[${RECORDING_ATTEMPTS} >= 3]?no_recording_id:ask_recording_id)
- ; Too many empty recording ID attempts
- same => n(no_recording_id),Playback(vm-goodbye)
- same => n,Hangup()
- ; Start recording
- same => n(start_recording),Playback(vm-rec-name)
+ same => n,GotoIf($["${RECORDING_ID}" = ""]?empty_recording_id:confirm_id)
+ ; Empty recording ID
+ same => n(empty_recording_id),Set(RECORDING_ID_ATTEMPTS=$[${RECORDING_ID_ATTEMPTS} + 1])
+ same => n,Playback(vm-incorrect)
+ same => n,GotoIf($[${RECORDING_ID_ATTEMPTS} >= 3]?recording_failed:ask_recording_id)
+ ; Confirm and start recording
+ same => n(confirm_id),Playback(vm-rec-name)
+ same => n,Wait(1)
  same => n,Playback(beep)
  same => n,Set(TIMESTAMP=${STRFTIME(${EPOCH},,%Y%m%d_%H%M%S)})
- same => n,Set(FILENAME=custom_${RECORDING_ID}_${TIMESTAMP})
- same => n,Record(/var/lib/asterisk/sounds/custom/${FILENAME}.wav,3,30,y)
+ same => n,Set(FILENAME=phone_${RECORDING_ID}_${TIMESTAMP})
+ same => n,Set(FULLPATH=/var/lib/asterisk/sounds/custom/${FILENAME}.wav)
+ same => n,Record(${FULLPATH},0,30,y)
  same => n,Wait(1)
+ ; Review menu after recording
+ same => n(review_menu),Background(to-listen-to-it&press-1)
+ same => n,Background(to-send-msg&press-2)
+ same => n,Background(to-erase-msg&press-3)
+ same => n,WaitExten(10)
+ same => n,Goto(review_menu)
+
+; Review Option 1: Listen to recording
+exten => 11,1,NoOp(=== Playing back recording ===)
+ same => n,Playback(${FULLPATH})
+ same => n,Goto(1,review_menu)
+
+; Review Option 2: Save recording
+exten => 12,1,NoOp(=== Saving recording ===)
  same => n,System(curl -X POST "http://localhost:8088/api/recordings/register?filename=${FILENAME}.wav&recording_id=${RECORDING_ID}" 2>/dev/null)
  same => n,Playback(vm-msgsaved)
- same => n,Playback(goodbye)
+ same => n,Playback(vm-goodbye)
+ same => n,Hangup()
+
+; Review Option 3: Delete and re-record
+exten => 13,1,NoOp(=== Deleting recording ===)
+ same => n,System(rm -f ${FULLPATH})
+ same => n,Playback(vm-deleted)
+ same => n,Goto(1,ask_recording_id)
+
+; Option 2: Listen to recordings (placeholder for future)
+exten => 2,1,NoOp(=== Listen to Recordings ===)
+ same => n,Playback(feature-not-avail-line)
+ same => n,Goto(s,main_menu)
+
+; Option #: Exit
+exten => #,1,NoOp(=== User Exit ===)
+ same => n,Playback(vm-goodbye)
+ same => n,Hangup()
+
+; Timeout or invalid option
+exten => t,1,NoOp(=== Timeout ===)
+ same => n,Goto(s,main_menu)
+
+exten => i,1,NoOp(=== Invalid Option ===)
+ same => n,Playback(option)
+ same => n,Playback(is-invalid)
+ same => n,Goto(s,main_menu)
+
+; Recording failed
+exten => recording_failed,1,NoOp(=== Recording Failed ===)
+ same => n,Playback(an-error-has-occurred)
+ same => n,Playback(vm-goodbye)
  same => n,Hangup()
 
 EOFEXT
@@ -205,8 +243,7 @@ EOFEXT
 # Replace password placeholder with actual password
 sed -i "s/RECORDING_PASSWORD_PLACEHOLDER/${RECORDING_PASSWORD}/g" /etc/asterisk/extensions.conf
 
-bashio::log.info "✓ Recording system configured on extension ${RECORDING_EXTENSION}"
-
+bashio::log.info "✓ Recording system with IVR menu configured on extension ${RECORDING_EXTENSION}"
 # Set permissions
 chown -R asterisk:asterisk /etc/asterisk
 chown -R asterisk:asterisk /var/lib/asterisk
