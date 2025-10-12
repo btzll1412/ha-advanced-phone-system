@@ -148,7 +148,8 @@ prompts = {
     "replay_recording": "To replay this recording, press 1",
     "rerecord": "To re-record, press 2",
     "save_recording": "To save this recording, press 3",
-    "main_menu": "To go back to the main menu, press star"
+    "main_menu": "To go back to the main menu, press star",
+    "password": "Please enter your password"
 }
 
 for name, text in prompts.items():
@@ -177,8 +178,7 @@ exten => s,1,NoOp(=== Recording System Started ===)
  same => n,Wait(1)
  same => n,Set(AUTH_ATTEMPTS=0)
  ; Password Authentication
- same => n(ask_password),Playback(vm-password)
- same => n,Wait(1)
+ same => n(ask_password),Background(custom_prompts/password)
  same => n,Read(PASSWORD,,4,,10)
  same => n,NoOp(Password entered: ${PASSWORD})
  same => n,GotoIf($["${PASSWORD}" = ""]?ask_password)
@@ -201,7 +201,7 @@ exten => s,1,NoOp(=== Recording System Started ===)
 ; Extension 1: Record new message
 exten => 1,1,NoOp(=== Starting Recording ===)
  same => n,Background(custom_prompts/enter_recording_id)
- same => n,Read(RECORDING_ID,,10,skip,3,10)
+ same => n,Read(RECORDING_ID,,10,,3,10)
  same => n,NoOp(Recording ID entered: ${RECORDING_ID})
  same => n,GotoIf($["${RECORDING_ID}" = ""]?1,1)
  same => n,Background(custom_prompts/record_your_message)
@@ -243,7 +243,7 @@ exten => s,1,NoOp(=== Review Menu ===)
 
 ; Option 1: Replay recording
 exten => 1,1,NoOp(=== Playing Recording ===)
- same => n,Playback(${FULLPATH})
+ same => n,Playback(${FULLPATH}.wav)
  same => n,Wait(1)
  same => n,Goto(s,1)
 
