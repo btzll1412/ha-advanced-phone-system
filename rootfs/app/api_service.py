@@ -171,32 +171,52 @@ async def monitor_cdr():
     last_position = 0
     first_run = True
     
+    logger.info(f"🔍 CDR Monitor started. Looking for: {CDR_FILE}")
+    
     while True:
         try:
             if os.path.exists(CDR_FILE):
+                if first_run:
+                    logger.info(f"📂 CDR file found! Processing from beginning...")
+                    
                 with open(CDR_FILE, 'r') as f:
                     # On first run, read entire file from beginning
                     if first_run:
                         f.seek(0)
                         first_run = False
-                        logger.info("📂 Reading existing CDR records from beginning...")
                     else:
                         f.seek(last_position)
                     
                     # Read new lines
-                    reader = csv.reader(f)
-                    for row in reader:
-                        if len(row) >= 16:
-                            await process_cdr_record(row)
+                    content = f.read()
+                    if content.strip():
+                        logger.info(f"📄 Found {len(content)} bytes of CDR data")
+                        f.seek(last_position if not first_run else 0)
+                        
+                        reader = csv.reader(f)
+                        row_count = 0
+                        for row in reader:
+                            row_count += 1
+                            logger.info(f"📝 Processing row {row_count}: {len(row)} columns")
+                            if len(row) >= 16:
+                                await process_cdr_record(row)
+                        
+                        logger.info(f"✓ Processed {row_count} rows")
                     
                     # Update position
                     last_position = f.tell()
+            else:
+                logger.warning(f"⚠️ CDR file not found: {CDR_FILE}")
             
             await asyncio.sleep(2)
             
         except Exception as e:
-            logger.error(f"CDR monitoring error: {e}")
+            logger.error(f"❌ CDR monitoring error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             await asyncio.sleep(5)
+
+
 async def process_cdr_record(row):
     """Process a single CDR record"""
     try:
@@ -638,11 +658,18 @@ async def process_broadcast(broadcast_id: str, request: BroadcastRequest):
 async def startup_event():
     """Initialize on startup"""
     init_database()
-    migrate_database()  # Add this line
+    logger.info("✓ Database initialized")
+    
+    migrate_database()
+    logger.info("✓ Database migrated")
+    
     asyncio.create_task(monitor_cdr())
+    logger.info("✓ CDR monitoring task started")
+    
     os.makedirs(RECORDINGS_PATH, exist_ok=True)
     os.makedirs(ASTERISK_SOUNDS, exist_ok=True)
     logger.info("✓ API Service started")
+
 
 @app.get("/health")
 async def health():
