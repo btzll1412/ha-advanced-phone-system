@@ -169,28 +169,48 @@ def init_database():
 async def monitor_cdr():
     """Monitor Asterisk CDR file and import new call records"""
     last_position = 0
+    processed_lines = set()  # Track processed lines
     
     while True:
         try:
             if os.path.exists(CDR_FILE):
                 with open(CDR_FILE, 'r') as f:
+                    # Seek to last known position
                     f.seek(last_position)
+                    
+                    # Read new lines
                     reader = csv.reader(f)
                     for row in reader:
-                        if len(row) >= 16:
-                            await process_cdr_record(row)
+                        # Skip empty rows or header rows
+                        if len(row) >= 16 and row[0] not in ['accountcode', 'DOCUMENTATION', '']:
+                            # Create a unique identifier for this row
+                            row_id = '|'.join(row[:3])  # Use first 3 columns as identifier
+                            
+                            if row_id not in processed_lines:
+                                await process_cdr_record(row)
+                                processed_lines.add(row_id)
+                    
+                    # Update position
                     last_position = f.tell()
-            await asyncio.sleep(2)
+            
+            await asyncio.sleep(2)  # Check every 2 seconds
+            
         except Exception as e:
             logger.error(f"CDR monitoring error: {e}")
             await asyncio.sleep(5)
-
 async def process_cdr_record(row):
     """Process a single CDR record"""
     try:
+        # Log the raw row for debugging
+        logger.debug(f"Processing CDR row: {row}")
+        
         caller_id, source, dest, context, channel, dst_channel, \
         lastapp, lastdata, start, answer, end, duration, billsec, \
         disposition, amaflags, uniqueid = row[:16]
+        
+        # Skip if this looks like a header
+        if caller_id in ['accountcode', 'DOCUMENTATION']:
+            return
         
         call_type = "unknown"
         direction = "unknown"
@@ -243,6 +263,7 @@ async def process_cdr_record(row):
         
     except Exception as e:
         logger.error(f"Error processing CDR record: {e}")
+
 
 def migrate_database():
     """Migrate database to add contact names"""
