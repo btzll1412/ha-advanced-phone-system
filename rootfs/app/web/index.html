@@ -82,6 +82,40 @@
             display: none;
         }
 
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
         .stat-card {
             flex: 1;
             min-width: 200px;
@@ -120,9 +154,133 @@
             box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
         }
 
+        .btn-secondary {
+            background: #6c757d;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+        }
+
         .btn-small {
             padding: 6px 12px;
             font-size: 12px;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #f8f9fa;
+        }
+
+        .upload-area:hover {
+            background: #e8f0fe;
+            border-color: #764ba2;
+        }
+
+        .recording-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .phone-list {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        .phone-tag {
+            background: #e8f0fe;
+            color: #667eea;
+            padding: 8px 15px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .phone-tag button {
+            background: none;
+            border: none;
+            color: #667eea;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        .contact-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .group-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            border-left: 4px solid #28a745;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
@@ -156,7 +314,11 @@
                 </div>
                 <div class="stat-card" style="background: #fff3cd;">
                     <div class="stat-number" id="missed-calls">0</div>
-                    <div class="stat-label">Missed</div>
+                    <div class="stat-label">Missed/Voicemail</div>
+                </div>
+                <div class="stat-card" style="background: #f8d7da;">
+                    <div class="stat-number" id="total-duration">0</div>
+                    <div class="stat-label">Total Minutes</div>
                 </div>
             </div>
 
@@ -196,39 +358,162 @@
         <!-- Make Call Tab -->
         <div id="make-call-tab" class="content hidden">
             <h2 style="margin-bottom: 20px; color: #333;">Make a Call</h2>
-            <p style="color: #666; margin-bottom: 20px;">Use the API to make calls programmatically.</p>
-            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
-                <code style="display: block; background: white; padding: 15px; border-radius: 4px; overflow-x: auto;">
-POST /api/call<br>
-{<br>
-&nbsp;&nbsp;"phone_number": "+1234567890",<br>
-&nbsp;&nbsp;"tts_text": "Hello, this is a test call"<br>
-}
-                </code>
-            </div>
+            <div id="call-alert" class="alert"></div>
+            
+            <form id="call-form">
+                <div class="form-group">
+                    <label>Phone Number *</label>
+                    <input type="tel" id="call-phone" placeholder="+1234567890" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Message Type</label>
+                    <select id="call-message-type" onchange="toggleCallMessageFields()">
+                        <option value="tts">Text-to-Speech</option>
+                        <option value="recording">Recording File</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="call-tts-group">
+                    <label>TTS Message *</label>
+                    <textarea id="call-tts" placeholder="Enter your message..."></textarea>
+                </div>
+
+                <div class="form-group hidden" id="call-recording-group">
+                    <label>Select Recording *</label>
+                    <select id="call-recording-select">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Caller ID</label>
+                    <input type="text" id="call-caller-id" placeholder="Optional">
+                </div>
+
+                <button type="submit" class="btn">Make Call</button>
+            </form>
         </div>
 
         <!-- Recordings Tab -->
         <div id="recordings-tab" class="content hidden">
             <h2 style="margin-bottom: 20px; color: #333;">Recordings</h2>
-            <p style="color: #666;">Manage your call recordings here.</p>
+            
+            <div style="margin-bottom: 30px;">
+                <h3 style="margin-bottom: 15px;">Upload Recording</h3>
+                <div id="recording-alert" class="alert"></div>
+                
+                <div class="upload-area" id="upload-area" onclick="document.getElementById('file-input').click()">
+                    <input type="file" id="file-input" accept=".wav,.mp3,.gsm" style="display: none;" onchange="handleFileSelect(event)">
+                    <div style="font-size: 48px; margin-bottom: 10px;">📁</div>
+                    <div style="font-size: 18px; font-weight: 600; color: #333; margin-bottom: 5px;">
+                        Click to upload or drag and drop
+                    </div>
+                    <div style="font-size: 14px; color: #666;">
+                        WAV, MP3, or GSM files
+                    </div>
+                </div>
+            </div>
+
+            <h3 style="margin-bottom: 15px;">Your Recordings</h3>
+            <button class="btn btn-secondary btn-small" onclick="loadRecordings()" style="margin-bottom: 15px;">Refresh</button>
+            <div id="recordings-list"></div>
         </div>
 
         <!-- Broadcasts Tab -->
         <div id="broadcasts-tab" class="content hidden">
             <h2 style="margin-bottom: 20px; color: #333;">Broadcasts</h2>
-            <p style="color: #666;">Create and manage broadcast campaigns.</p>
+            
+            <div style="margin-bottom: 30px; padding: 20px; background: #f8f9fa; border-radius: 10px;">
+                <h3 style="margin-bottom: 15px;">Create Broadcast</h3>
+                <div id="broadcast-alert" class="alert"></div>
+                
+                <form id="broadcast-form">
+                    <div class="form-group">
+                        <label>Broadcast Name *</label>
+                        <input type="text" id="broadcast-name" placeholder="e.g., Emergency Alert" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Recipients</label>
+                        <select id="recipient-type" onchange="toggleRecipientFields()">
+                            <option value="manual">Enter Phone Numbers</option>
+                            <option value="group">Use Contact Group</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="manual-numbers-group">
+                        <label>Phone Numbers *</label>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="tel" id="phone-input" placeholder="+1234567890">
+                            <button type="button" class="btn btn-secondary" onclick="addPhone()">Add</button>
+                        </div>
+                        <div class="phone-list" id="phone-list"></div>
+                    </div>
+
+                    <div class="form-group hidden" id="group-select-group">
+                        <label>Select Group *</label>
+                        <select id="group-select"></select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Message Type</label>
+                        <select id="broadcast-message-type">
+                            <option value="tts">Text-to-Speech</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Message *</label>
+                        <textarea id="broadcast-tts" placeholder="Enter message..." required></textarea>
+                    </div>
+
+                    <button type="submit" class="btn">Start Broadcast</button>
+                </form>
+            </div>
+
+            <h3 style="margin-bottom: 15px;">Broadcast History</h3>
+            <div id="broadcasts-list"></div>
         </div>
 
         <!-- Groups Tab -->
         <div id="groups-tab" class="content hidden">
             <h2 style="margin-bottom: 20px; color: #333;">Contact Groups</h2>
-            <p style="color: #666;">Manage your contact groups for broadcasts.</p>
+            
+            <div style="margin-bottom: 30px; padding: 20px; background: #f8f9fa; border-radius: 10px;">
+                <h3 style="margin-bottom: 15px;">Create Group</h3>
+                <div id="group-alert" class="alert"></div>
+                
+                <form id="group-form">
+                    <div class="form-group">
+                        <label>Group Name *</label>
+                        <input type="text" id="group-name" placeholder="e.g., Family" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Contacts *</label>
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <input type="text" id="contact-name-input" placeholder="Name" style="flex: 1;">
+                            <input type="tel" id="contact-phone-input" placeholder="+1234567890" style="flex: 1;">
+                            <button type="button" class="btn btn-secondary" onclick="addGroupContact()">Add</button>
+                        </div>
+                        <div id="group-contacts-list"></div>
+                    </div>
+
+                    <button type="submit" class="btn">Create Group</button>
+                </form>
+            </div>
+
+            <h3 style="margin-bottom: 15px;">Saved Groups</h3>
+            <button class="btn btn-secondary btn-small" onclick="loadGroups()" style="margin-bottom: 15px;">Refresh</button>
+            <div id="groups-list"></div>
         </div>
     </div>
 
     <script>
         const API_URL = window.location.origin;
+        let phoneNumbers = [];
+        let groupContacts = [];
 
         function showTab(tabName) {
             document.querySelectorAll('.content').forEach(el => el.classList.add('hidden'));
@@ -239,22 +524,164 @@ POST /api/call<br>
             
             if (tabName === 'dashboard') loadDashboard();
             if (tabName === 'history') loadCallRecords();
+            if (tabName === 'make-call') loadRecordingsForSelect();
+            if (tabName === 'recordings') loadRecordings();
+            if (tabName === 'broadcasts') loadBroadcasts();
+            if (tabName === 'groups') loadGroups();
         }
 
+        function toggleCallMessageFields() {
+            const type = document.getElementById('call-message-type').value;
+            document.getElementById('call-tts-group').classList.toggle('hidden', type !== 'tts');
+            document.getElementById('call-recording-group').classList.toggle('hidden', type !== 'recording');
+        }
+
+        function toggleRecipientFields() {
+            const type = document.getElementById('recipient-type').value;
+            document.getElementById('manual-numbers-group').classList.toggle('hidden', type !== 'manual');
+            document.getElementById('group-select-group').classList.toggle('hidden', type !== 'group');
+        }
+
+        function showAlert(elementId, message, type) {
+            const alert = document.getElementById(elementId);
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            alert.style.display = 'block';
+            setTimeout(() => alert.style.display = 'none', 5000);
+        }
+
+        // Phone number management
+        function addPhone() {
+            const input = document.getElementById('phone-input');
+            const phone = input.value.trim();
+            
+            if (phone && !phoneNumbers.includes(phone)) {
+                phoneNumbers.push(phone);
+                updatePhoneList();
+                input.value = '';
+            }
+        }
+
+        function removePhone(phone) {
+            phoneNumbers = phoneNumbers.filter(p => p !== phone);
+            updatePhoneList();
+        }
+
+        function updatePhoneList() {
+            const list = document.getElementById('phone-list');
+            list.innerHTML = phoneNumbers.map(phone => `
+                <div class="phone-tag">
+                    ${phone}
+                    <button onclick="removePhone('${phone}')">×</button>
+                </div>
+            `).join('');
+        }
+
+        // Group contact management
+        function addGroupContact() {
+            const nameInput = document.getElementById('contact-name-input');
+            const phoneInput = document.getElementById('contact-phone-input');
+
+            const name = nameInput.value.trim();
+            const phone = phoneInput.value.trim();
+
+            if (!name || !phone) {
+                showAlert('group-alert', 'Please enter both name and phone', 'error');
+                return;
+            }
+
+            groupContacts.push({ name, phone_number: phone });
+            updateGroupContactsList();
+
+            nameInput.value = '';
+            phoneInput.value = '';
+        }
+
+        function removeGroupContact(index) {
+            groupContacts.splice(index, 1);
+            updateGroupContactsList();
+        }
+
+        function updateGroupContactsList() {
+            const list = document.getElementById('group-contacts-list');
+
+            if (groupContacts.length === 0) {
+                list.innerHTML = '<p style="color: #666;">No contacts yet</p>';
+                return;
+            }
+
+            list.innerHTML = groupContacts.map((contact, index) => `
+                <div class="contact-card">
+                    <div>
+                        <div style="font-weight: 600;">${contact.name}</div>
+                        <div style="font-size: 14px; color: #666;">${contact.phone_number}</div>
+                    </div>
+                    <button class="btn btn-danger btn-small" onclick="removeGroupContact(${index})">Remove</button>
+                </div>
+            `).join('');
+        }
+
+        // File upload
+        const uploadArea = document.getElementById('upload-area');
+        
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadArea?.addEventListener(eventName, e => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+        });
+
+        uploadArea?.addEventListener('drop', e => {
+            const files = e.dataTransfer.files;
+            if (files.length > 0) uploadFile(files[0]);
+        });
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) uploadFile(file);
+        }
+
+        async function uploadFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                showAlert('recording-alert', 'Uploading...', 'info');
+                
+                const response = await fetch(`${API_URL}/api/recordings/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    showAlert('recording-alert', 'Upload successful!', 'success');
+                    setTimeout(loadRecordings, 1000);
+                } else {
+                    showAlert('recording-alert', 'Upload failed', 'error');
+                }
+            } catch (error) {
+                showAlert('recording-alert', `Error: ${error.message}`, 'error');
+            }
+            
+            document.getElementById('file-input').value = '';
+        }
+
+        // Dashboard
         async function loadDashboard() {
             try {
-                const response = await fetch('/api/call_records?limit=50');
+                const response = await fetch('/api/call_records?limit=100');
                 const records = await response.json();
                 
                 const total = records.length;
-                const answered = records.filter(r => r.disposition === '2').length;
+                const answered = records.filter(r => r.disposition === '2' && parseInt(r.billsec) > 0).length;
                 const missed = total - answered;
+                const totalMinutes = Math.round(records.reduce((sum, r) => sum + (parseInt(r.duration) || 0), 0) / 60);
                 
                 document.getElementById('total-calls').textContent = total;
                 document.getElementById('answered-calls').textContent = answered;
                 document.getElementById('missed-calls').textContent = missed;
+                document.getElementById('total-duration').textContent = totalMinutes;
                 
-                // Show recent 5 calls
                 const recentList = document.getElementById('recent-calls-list');
                 if (records.length === 0) {
                     recentList.innerHTML = '<p style="color: #666;">No calls yet</p>';
@@ -263,22 +690,18 @@ POST /api/call<br>
                 
                 recentList.innerHTML = records.slice(0, 5).map(record => {
                     const date = new Date(record.created_at);
-                    const dispositionMap = {
-                        '1': 'NO ANSWER',
-                        '2': 'ANSWERED',
-                        '3': 'BUSY',
-                        '4': 'FAILED'
-                    };
-                    const disposition = dispositionMap[record.disposition] || 'Unknown';
+                    const isAnswered = record.disposition === '2' && parseInt(record.billsec) > 0;
+                    const status = isAnswered ? 'ANSWERED' : 'VOICEMAIL/MISSED';
+                    const duration = parseInt(record.duration) || 0;
                     
                     return `
                         <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
                             <div>
                                 <div style="font-weight: 600; color: #333;">${record.source_number} → ${record.destination_number}</div>
-                                <div style="font-size: 12px; color: #666; margin-top: 4px;">${date.toLocaleString()}</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">${date.toLocaleString()} • ${duration}s</div>
                             </div>
-                            <span style="background: ${disposition === 'ANSWERED' ? '#48bb78' : '#ed8936'}; color: white; padding: 4px 12px; border-radius: 4px; font-size: 12px;">
-                                ${disposition}
+                            <span style="background: ${isAnswered ? '#48bb78' : '#ed8936'}; color: white; padding: 4px 12px; border-radius: 4px; font-size: 12px;">
+                                ${status}
                             </span>
                         </div>
                     `;
@@ -289,9 +712,10 @@ POST /api/call<br>
             }
         }
 
+        // Call History
         async function loadCallRecords() {
             try {
-                const response = await fetch('/api/call_records?limit=50');
+                const response = await fetch('/api/call_records?limit=100');
                 const records = await response.json();
                 
                 const tableBody = document.getElementById('call-records-table');
@@ -300,7 +724,7 @@ POST /api/call<br>
                     tableBody.innerHTML = `
                         <tr>
                             <td colspan="6" style="padding: 40px; text-align: center; color: #6c757d;">
-                                No call history available yet. Make a call to see it here!
+                                No call history yet
                             </td>
                         </tr>
                     `;
@@ -308,29 +732,17 @@ POST /api/call<br>
                 }
                 
                 tableBody.innerHTML = records.map(record => {
-                    let dateStr = 'Unknown Time';
-                    if (record.created_at) {
-                        const date = new Date(record.created_at);
-                        if (date.toString() !== 'Invalid Date') {
-                            dateStr = `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
-                        }
-                    }
+                    const date = new Date(record.created_at);
+                    const dateStr = date.toString() !== 'Invalid Date' 
+                        ? `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`
+                        : record.created_at;
                     
-                    const dispositionMap = {
-                        '1': 'NO ANSWER',
-                        '2': 'ANSWERED',
-                        '3': 'BUSY',
-                        '4': 'FAILED'
-                    };
-                    const disposition = dispositionMap[record.disposition] || record.disposition || 'Unknown';
-                    
-                    const statusColors = {
-                        'ANSWERED': '#48bb78',
-                        'NO ANSWER': '#ed8936',
-                        'BUSY': '#f56565',
-                        'FAILED': '#dc3545'
-                    };
-                    const statusColor = statusColors[disposition] || '#718096';
+                    // Determine if call was answered or went to voicemail
+                    const billsec = parseInt(record.billsec) || 0;
+                    const duration = parseInt(record.duration) || 0;
+                    const isAnswered = record.disposition === '2' && billsec > 0;
+                    const status = isAnswered ? 'ANSWERED' : 'VOICEMAIL/MISSED';
+                    const statusColor = isAnswered ? '#48bb78' : '#ed8936';
                     
                     const directionIcons = {
                         'outbound': '📞',
@@ -345,10 +757,13 @@ POST /api/call<br>
                             <td style="padding: 12px; font-size: 20px;">${directionIcon}</td>
                             <td style="padding: 12px;">${record.source_number || 'Unknown'}</td>
                             <td style="padding: 12px;">${record.destination_number || 'Unknown'}</td>
-                            <td style="padding: 12px;">${record.duration || 0}s</td>
+                            <td style="padding: 12px;">
+                                ${duration}s
+                                ${billsec > 0 ? `<div style="font-size: 11px; color: #666;">(${billsec}s talk)</div>` : ''}
+                            </td>
                             <td style="padding: 12px;">
                                 <span style="background: ${statusColor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
-                                    ${disposition}
+                                    ${status}
                                 </span>
                             </td>
                         </tr>
@@ -360,12 +775,224 @@ POST /api/call<br>
             }
         }
 
-        // Load dashboard on page load
+        // Make Call
+        document.getElementById('call-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const data = {
+                phone_number: document.getElementById('call-phone').value,
+                tts_text: document.getElementById('call-tts').value,
+                caller_id: document.getElementById('call-caller-id').value || null
+            };
+
+            try {
+                const response = await fetch(`${API_URL}/api/call`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    showAlert('call-alert', `Call initiated! ID: ${result.call_id}`, 'success');
+                    e.target.reset();
+                } else {
+                    showAlert('call-alert', 'Failed to make call', 'error');
+                }
+            } catch (error) {
+                showAlert('call-alert', `Error: ${error.message}`, 'error');
+            }
+        });
+
+        // Recordings
+        async function loadRecordings() {
+            const list = document.getElementById('recordings-list');
+            list.innerHTML = '<div class="loading"><div class="spinner"></div>Loading...</div>';
+
+            try {
+                const response = await fetch(`${API_URL}/api/recordings`);
+                const data = await response.json();
+                
+                if (data.recordings.length === 0) {
+                    list.innerHTML = '<p style="color: #666;">No recordings yet</p>';
+                    return;
+                }
+
+                list.innerHTML = data.recordings.map(r => `
+                    <div class="recording-card">
+                        <div>
+                            <div style="font-weight: 600;">${r.display_name}</div>
+                            <div style="font-size: 12px; color: #666;">${r.size_mb} MB • ${r.format}</div>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn btn-secondary btn-small" onclick="deleteRecording('${r.filename}')">Delete</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                list.innerHTML = '<p style="color: #dc3545;">Error loading recordings</p>';
+            }
+        }
+
+        async function loadRecordingsForSelect() {
+            const select = document.getElementById('call-recording-select');
+            try {
+                const response = await fetch(`${API_URL}/api/recordings`);
+                const data = await response.json();
+                
+                select.innerHTML = data.recordings.length > 0
+                    ? data.recordings.map(r => `<option value="${r.display_name}">${r.display_name}</option>`).join('')
+                    : '<option value="">No recordings</option>';
+            } catch (error) {
+                select.innerHTML = '<option value="">Error loading</option>';
+            }
+        }
+
+        async function deleteRecording(filename) {
+            if (!confirm(`Delete "${filename}"?`)) return;
+
+            try {
+                const response = await fetch(`${API_URL}/api/recordings/${filename}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    showAlert('recording-alert', 'Deleted!', 'success');
+                    loadRecordings();
+                }
+            } catch (error) {
+                showAlert('recording-alert', 'Error deleting', 'error');
+            }
+        }
+
+        // Broadcasts
+        document.getElementById('broadcast-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const recipientType = document.getElementById('recipient-type').value;
+            const data = {
+                name: document.getElementById('broadcast-name').value,
+                tts_text: document.getElementById('broadcast-tts').value
+            };
+
+            if (recipientType === 'manual') {
+                if (phoneNumbers.length === 0) {
+                    showAlert('broadcast-alert', 'Add at least one number', 'error');
+                    return;
+                }
+                data.phone_numbers = phoneNumbers;
+            } else {
+                data.group_name = document.getElementById('group-select').value;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/api/broadcast`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    showAlert('broadcast-alert', 'Broadcast started!', 'success');
+                    e.target.reset();
+                    phoneNumbers = [];
+                    updatePhoneList();
+                    setTimeout(loadBroadcasts, 1000);
+                }
+            } catch (error) {
+                showAlert('broadcast-alert', 'Error creating broadcast', 'error');
+            }
+        });
+
+        async function loadBroadcasts() {
+            const list = document.getElementById('broadcasts-list');
+            try {
+                const response = await fetch(`${API_URL}/api/broadcasts`);
+                const data = await response.json();
+                
+                list.innerHTML = data.broadcasts.length > 0
+                    ? data.broadcasts.map(b => `
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 10px;">
+                            <div style="font-weight: 600;">${b.name}</div>
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                ${new Date(b.created_at).toLocaleString()} • ${b.total_numbers} recipients
+                            </div>
+                        </div>
+                    `).join('')
+                    : '<p style="color: #666;">No broadcasts yet</p>';
+            } catch (error) {
+                list.innerHTML = '<p style="color: #dc3545;">Error loading</p>';
+            }
+        }
+
+        // Groups
+        document.getElementById('group-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (groupContacts.length === 0) {
+                showAlert('group-alert', 'Add at least one contact', 'error');
+                return;
+            }
+
+            const data = {
+                name: document.getElementById('group-name').value,
+                contacts: groupContacts
+            };
+
+            try {
+                const response = await fetch(`${API_URL}/api/groups`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    showAlert('group-alert', 'Group created!', 'success');
+                    e.target.reset();
+                    groupContacts = [];
+                    updateGroupContactsList();
+                    setTimeout(loadGroups, 1000);
+                }
+            } catch (error) {
+                showAlert('group-alert', 'Error creating group', 'error');
+            }
+        });
+
+        async function loadGroups() {
+            const list = document.getElementById('groups-list');
+            const select = document.getElementById('group-select');
+            
+            try {
+                const response = await fetch(`${API_URL}/api/groups`);
+                const data = await response.json();
+                
+                if (data.groups.length === 0) {
+                    list.innerHTML = '<p style="color: #666;">No groups yet</p>';
+                    select.innerHTML = '<option value="">No groups</option>';
+                    return;
+                }
+
+                list.innerHTML = data.groups.map(g => `
+                    <div class="group-card">
+                        <div style="font-weight: 600;">${g.name}</div>
+                        <div style="font-size: 14px; color: #666; margin-top: 4px;">${g.member_count} members</div>
+                    </div>
+                `).join('');
+
+                select.innerHTML = data.groups.map(g => 
+                    `<option value="${g.name}">${g.name} (${g.member_count})</option>`
+                ).join('');
+            } catch (error) {
+                list.innerHTML = '<p style="color: #dc3545;">Error loading</p>';
+            }
+        }
+
+        // Initialize
         loadDashboard();
 
         // Auto-refresh every 10 seconds
         setInterval(() => {
-            const activeTab = document.querySelector('.tab.active').textContent.trim();
+            const activeTab = document.querySelector('.tab.active')?.textContent.trim();
             if (activeTab === 'Dashboard') loadDashboard();
             if (activeTab === 'Call History') loadCallRecords();
         }, 10000);
