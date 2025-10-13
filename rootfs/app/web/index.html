@@ -671,10 +671,87 @@
         <!-- History Tab -->
         <div id="history-tab" class="content hidden">
             <h2 style="margin-bottom: 20px; color: #333;">Call History</h2>
-            <button class="btn btn-secondary" onclick="loadCallHistory()" style="margin-bottom: 20px;">Refresh</button>
-            <div id="history-list"></div>
+            
+            <!-- Filters -->
+            <div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500;">Call Type</label>
+                        <select id="filter-call-type" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                            <option value="">All Types</option>
+                            <option value="outbound">Outbound</option>
+                            <option value="inbound">Inbound</option>
+                            <option value="internal">Internal</option>
+                            <option value="recording_system">Recording System</option>
+                            <option value="broadcast">Broadcast</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500;">Extension</label>
+                        <select id="filter-extension" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                            <option value="">All Extensions</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500;">Disposition</label>
+                        <select id="filter-disposition" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                            <option value="">All Status</option>
+                            <option value="ANSWERED">Answered</option>
+                            <option value="NO ANSWER">No Answer</option>
+                            <option value="BUSY">Busy</option>
+                            <option value="FAILED">Failed</option>
+                        </select>
+                    </div>
+                    
+                    <div style="display: flex; align-items: flex-end;">
+                        <button onclick="applyCallFilters()" style="width: 100%; padding: 8px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                            Apply Filters
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Call Records Table -->
+            <div style="background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead style="background: #f8f9fa;">
+                            <tr>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Time</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Direction</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">From</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">To</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Extension</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Type</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Duration</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Status</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Details</th>
+                            </tr>
+                        </thead>
+                        <tbody id="call-records-table">
+                            <tr>
+                                <td colspan="9" style="padding: 40px; text-align: center; color: #6c757d;">
+                                    Loading call history...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Call Details Modal -->
+            <div id="call-details-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+                <div style="background: white; padding: 30px; border-radius: 8px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h3 style="margin: 0;">Call Details</h3>
+                        <button onclick="closeCallDetails()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">&times;</button>
+                    </div>
+                    <div id="call-details-content"></div>
+                </div>
+            </div>
         </div>
-    </div>
 
     <script>
         const API_URL = window.location.origin;
@@ -698,7 +775,7 @@
                 loadRecordingsForSelect('broadcast-recording-select');
             }
             if (tabName === 'groups') loadGroups();
-            if (tabName === 'history') loadCallHistory();
+            if (tabName === 'history') loadCallRecords();
         }
 
         // Toggle functions
@@ -1528,7 +1605,251 @@ async function hangupCall(callId) {
     console.log('=== HANGUP DEBUG END ===');
 
 }
+
+// Load call records from CDR
+async function loadCallRecords() {
+    try {
+        const response = await fetch('/api/call_records?limit=50');
+        const records = await response.json();
         
+        const tableBody = document.getElementById('call-records-table');
+        
+        if (!records || records.length === 0) {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="9" style="padding: 40px; text-align: center; color: #6c757d;">
+                        No call history available yet. Make a call to see it here!
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        
+        // Populate extension filter
+        const extensions = [...new Set(records.filter(r => r.extension).map(r => r.extension))];
+        const extFilter = document.getElementById('filter-extension');
+        extensions.forEach(ext => {
+            const option = document.createElement('option');
+            option.value = ext;
+            option.textContent = `Extension ${ext}`;
+            extFilter.appendChild(option);
+        });
+        
+        displayCallRecords(records);
+        
+    } catch (error) {
+        console.error('Error loading call records:', error);
+        document.getElementById('call-records-table').innerHTML = `
+            <tr>
+                <td colspan="9" style="padding: 40px; text-align: center; color: #dc3545;">
+                    Error loading call history
+                </td>
+            </tr>
+        `;
+    }
+}
+
+function displayCallRecords(records) {
+    const tableBody = document.getElementById('call-records-table');
+    
+    tableBody.innerHTML = records.map(record => {
+        const startTime = new Date(record.start_time);
+        const directionIcon = getDirectionIcon(record.direction);
+        const typeColor = getCallTypeColor(record.call_type);
+        const statusColor = getStatusColor(record.disposition);
+        
+        return `
+            <tr style="border-bottom: 1px solid #dee2e6; transition: background 0.2s;" 
+                onmouseover="this.style.background='#f8f9fa'" 
+                onmouseout="this.style.background='white'">
+                <td style="padding: 12px;">
+                    <div style="font-weight: 500;">${startTime.toLocaleDateString()}</div>
+                    <div style="font-size: 12px; color: #6c757d;">${startTime.toLocaleTimeString()}</div>
+                </td>
+                <td style="padding: 12px;">
+                    <span style="font-size: 20px;">${directionIcon}</span>
+                </td>
+                <td style="padding: 12px;">
+                    <div style="font-weight: 500;">${record.source_number || 'Unknown'}</div>
+                    ${record.caller_id ? `<div style="font-size: 12px; color: #6c757d;">${record.caller_id}</div>` : ''}
+                </td>
+                <td style="padding: 12px; font-weight: 500;">
+                    ${record.destination_number || 'Unknown'}
+                </td>
+                <td style="padding: 12px;">
+                    ${record.extension ? `<span style="background: #e3f2fd; color: #1976d2; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;">Ext ${record.extension}</span>` : '-'}
+                </td>
+                <td style="padding: 12px;">
+                    <span style="background: ${typeColor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;">
+                        ${formatCallType(record.call_type)}
+                    </span>
+                </td>
+                <td style="padding: 12px;">
+                    ${formatDuration(record.duration, record.billsec)}
+                </td>
+                <td style="padding: 12px;">
+                    <span style="background: ${statusColor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;">
+                        ${record.disposition}
+                    </span>
+                </td>
+                <td style="padding: 12px;">
+                    <button onclick='showCallDetails(${JSON.stringify(record)})' 
+                            style="background: #667eea; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                        View
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function getDirectionIcon(direction) {
+    const icons = {
+        'outbound': '📞',
+        'inbound': '📲',
+        'internal': '🔄',
+        'recording_system': '🎙️',
+        'broadcast': '📢'
+    };
+    return icons[direction] || '📞';
+}
+
+function getCallTypeColor(type) {
+    const colors = {
+        'outbound': '#667eea',
+        'inbound': '#48bb78',
+        'internal': '#ed8936',
+        'recording_system': '#9f7aea',
+        'broadcast': '#f56565'
+    };
+    return colors[type] || '#718096';
+}
+
+function getStatusColor(status) {
+    const colors = {
+        'ANSWERED': '#48bb78',
+        'NO ANSWER': '#ed8936',
+        'BUSY': '#f56565',
+        'FAILED': '#dc3545'
+    };
+    return colors[status] || '#718096';
+}
+
+function formatCallType(type) {
+    const labels = {
+        'outbound': 'Outbound',
+        'inbound': 'Inbound',
+        'internal': 'Internal',
+        'recording_system': 'Recording',
+        'broadcast': 'Broadcast'
+    };
+    return labels[type] || type;
+}
+
+function formatDuration(duration, billsec) {
+    if (!duration || duration === 0) return '-';
+    const mins = Math.floor(duration / 60);
+    const secs = duration % 60;
+    const durationStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+    const billStr = billsec ? ` (${billsec}s billed)` : '';
+    return `<div>${durationStr}</div><div style="font-size: 11px; color: #6c757d;">${billStr}</div>`;
+}
+
+function showCallDetails(record) {
+    const modal = document.getElementById('call-details-modal');
+    const content = document.getElementById('call-details-content');
+    
+    const startTime = new Date(record.start_time);
+    const answerTime = record.answer_time ? new Date(record.answer_time) : null;
+    const endTime = record.end_time ? new Date(record.end_time) : null;
+    
+    content.innerHTML = `
+        <div style="display: grid; gap: 15px;">
+            <div style="display: grid; grid-template-columns: 140px 1fr; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
+                <strong>Unique ID:</strong><span>${record.uniqueid}</span>
+                <strong>Call Type:</strong><span>${formatCallType(record.call_type)}</span>
+                <strong>Direction:</strong><span>${record.direction}</span>
+                <strong>Status:</strong><span>${record.disposition}</span>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 140px 1fr; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
+                <strong>From:</strong><span>${record.source_number}</span>
+                <strong>To:</strong><span>${record.destination_number}</span>
+                ${record.caller_id ? `<strong>Caller ID:</strong><span>${record.caller_id}</span>` : ''}
+                ${record.extension ? `<strong>Extension:</strong><span>${record.extension}</span>` : ''}
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 140px 1fr; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
+                <strong>Started:</strong><span>${startTime.toLocaleString()}</span>
+                ${answerTime ? `<strong>Answered:</strong><span>${answerTime.toLocaleString()}</span>` : ''}
+                ${endTime ? `<strong>Ended:</strong><span>${endTime.toLocaleString()}</span>` : ''}
+                <strong>Total Duration:</strong><span>${record.duration}s</span>
+                <strong>Billable Time:</strong><span>${record.billsec}s</span>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 140px 1fr; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
+                <strong>Channel:</strong><span style="font-size: 12px; word-break: break-all;">${record.channel}</span>
+                <strong>Destination:</strong><span style="font-size: 12px; word-break: break-all;">${record.destination_channel}</span>
+                <strong>Context:</strong><span>${record.context}</span>
+            </div>
+            
+            ${record.recording_id ? `
+                <div style="padding: 10px; background: #e3f2fd; border-radius: 4px;">
+                    <strong>📼 Recording ID:</strong> ${record.recording_id}
+                </div>
+            ` : ''}
+            
+            ${record.broadcast_id ? `
+                <div style="padding: 10px; background: #fce4ec; border-radius: 4px;">
+                    <strong>📢 Broadcast ID:</strong> ${record.broadcast_id}
+                </div>
+            ` : ''}
+        </div>
+    `;
+    
+    modal.style.display = 'flex';
+}
+
+function closeCallDetails() {
+    document.getElementById('call-details-modal').style.display = 'none';
+}
+
+function applyCallFilters() {
+    const typeFilter = document.getElementById('filter-call-type').value;
+    const extFilter = document.getElementById('filter-extension').value;
+    const dispFilter = document.getElementById('filter-disposition').value;
+    
+    let url = '/api/call_records?limit=50';
+    if (typeFilter) url += `&call_type=${typeFilter}`;
+    
+    fetch(url)
+        .then(r => r.json())
+        .then(records => {
+            // Apply client-side filters for extension and disposition
+            let filtered = records;
+            if (extFilter) filtered = filtered.filter(r => r.extension === extFilter);
+            if (dispFilter) filtered = filtered.filter(r => r.disposition === dispFilter);
+            displayCallRecords(filtered);
+        });
+}
+
+// Load call records when Call History tab is shown
+document.addEventListener('DOMContentLoaded', () => {
+    // Load on page load if Call History tab is active
+    if (document.getElementById('call-history-tab').classList.contains('active')) {
+        loadCallRecords();
+    }
+    
+ 
+    
+    // Auto-refresh every 10 seconds if on Call History tab
+    setInterval(() => {
+    if (document.getElementById('call-history-tab').classList.contains('active')) {
+        loadCallRecords();
+    }
+}, 10000);
+});
+            
     </script>
 </body>
 </html>
