@@ -220,24 +220,12 @@ async def monitor_cdr():
 async def process_cdr_record(row):
     """Process a single CDR record"""
     try:
-        logger.info(f"🔍 RAW ROW DATA: {row}")
-        logger.info(f"🔍 Row length: {len(row)}")
-        
         # Skip if not enough columns
-        if len(row) < 16:
+        if len(row) < 17:
             logger.warning(f"❌ Skipping row - only {len(row)} columns")
             return
         
-        # Log each column
-        for i, col in enumerate(row):
-            logger.info(f"  Column {i}: {col}")
-        
-        # Skip header row
-        if row[14] == 'DOCUMENTATION' or row[13] == 'disposition' or row[1] == 'src':
-            logger.warning("❌ Skipping header row")
-            return
-        
-        # Parse CDR
+        # Parse CDR with CORRECT column positions (18 columns total)
         accountcode = row[0]
         source = row[1]
         dest = row[2]
@@ -253,12 +241,11 @@ async def process_cdr_record(row):
         billsec = row[12]
         disposition = row[13]
         amaflags = row[14]
-        uniqueid = row[15]
+        # Skip row[15] - it's empty
+        uniqueid = row[16]  # ← THE FIX! Use column 16 instead of 15
         
-        logger.info(f"📋 Parsed - Source: {source}, Dest: {dest}, UniqueID: {uniqueid}, Disposition: {disposition}")
-        
-        # Skip if uniqueid looks invalid
-        if uniqueid in ['uniqueid', 'DOCUMENTATION', '']:
+        # Skip if uniqueid is empty
+        if not uniqueid or uniqueid == '':
             logger.warning(f"❌ Invalid uniqueid: {uniqueid}")
             return
         
@@ -284,29 +271,29 @@ async def process_cdr_record(row):
             else:
                 call_type = "outbound"
                 direction = "outbound"
-        
-        logger.info(f"🏷️ Call type: {call_type}, Direction: {direction}")
+        elif context == "inbound":
+            call_type = "inbound"
+            direction = "inbound"
+        elif context == "broadcast":
+            call_type = "broadcast"
+            direction = "outbound"
         
         # Parse extension
         if "SIP/" in dst_channel:
             try:
                 extension = dst_channel.split("/")[1].split("-")[0]
-                logger.info(f"📱 Extension: {extension}")
-            except Exception as e:
-                logger.error(f"Error parsing extension: {e}")
+            except:
+                pass
         
         # Convert to integers
         try:
             duration_int = int(float(duration))
             billsec_int = int(float(billsec))
-            logger.info(f"⏱️ Duration: {duration_int}s, Billsec: {billsec_int}s")
-        except Exception as e:
-            logger.error(f"Error converting duration/billsec: {e}")
+        except:
             duration_int = 0
             billsec_int = 0
         
         # Insert into database
-        logger.info("💾 Attempting to save to database...")
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
@@ -327,10 +314,9 @@ async def process_cdr_record(row):
         logger.info(f"✅ SAVED: {source} → {dest} ({call_type}, {disposition})")
         
     except Exception as e:
-        logger.error(f"❌❌❌ ERROR processing CDR: {e}")
+        logger.error(f"❌ ERROR: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        logger.error(f"Problem row: {row}")
 
 def migrate_database():
     """Migrate database to add contact names"""
