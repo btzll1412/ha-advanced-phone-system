@@ -169,31 +169,30 @@ def init_database():
 async def monitor_cdr():
     """Monitor Asterisk CDR file and import new call records"""
     last_position = 0
-    processed_lines = set()  # Track processed lines
+    first_run = True
     
     while True:
         try:
             if os.path.exists(CDR_FILE):
                 with open(CDR_FILE, 'r') as f:
-                    # Seek to last known position
-                    f.seek(last_position)
+                    # On first run, read entire file from beginning
+                    if first_run:
+                        f.seek(0)
+                        first_run = False
+                        logger.info("📂 Reading existing CDR records from beginning...")
+                    else:
+                        f.seek(last_position)
                     
                     # Read new lines
                     reader = csv.reader(f)
                     for row in reader:
-                        # Skip empty rows or header rows
-                        if len(row) >= 16 and row[0] not in ['accountcode', 'DOCUMENTATION', '']:
-                            # Create a unique identifier for this row
-                            row_id = '|'.join(row[:3])  # Use first 3 columns as identifier
-                            
-                            if row_id not in processed_lines:
-                                await process_cdr_record(row)
-                                processed_lines.add(row_id)
+                        if len(row) >= 16:
+                            await process_cdr_record(row)
                     
                     # Update position
                     last_position = f.tell()
             
-            await asyncio.sleep(2)  # Check every 2 seconds
+            await asyncio.sleep(2)
             
         except Exception as e:
             logger.error(f"CDR monitoring error: {e}")
