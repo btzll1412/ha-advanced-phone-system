@@ -1833,12 +1833,12 @@ function applyCallFilters() {
         });
 }
 
-// Load call records when Call History tab is shown
-document.addEventListener('DOMContentLoaded', () => {
-    // Load on page load if Call History tab is active
+// Auto-refresh call records every 10 seconds if on Call History tab
+setInterval(() => {
     if (document.getElementById('history-tab').classList.contains('active')) {
         loadCallRecords();
     }
+}, 10000);
     
  
     
