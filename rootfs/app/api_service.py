@@ -32,7 +32,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize FastAPI
-app = FastAPI(title="Advanced Phone System API", version="1.0.0")
+app = FastAPI(title="Advanced Phone System API", version="1.1.0")
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_web_ui():
@@ -44,7 +44,7 @@ async def api_info():
     """API information endpoint"""
     return {
         "service": "Advanced Phone System API",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "status": "running"
     }
 
@@ -77,16 +77,7 @@ def init_database():
     """Initialize SQLite database"""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     
-    conn = get_db_connection()  # Changed this line
-    cursor = conn.cursor()
-    # ... rest stays the same
-    
-    # Force delete old database
-   # if os.path.exists(DB_PATH):
-       # os.remove(DB_PATH)
-       # logger.info("🔄 Old database removed, creating fresh schema")
-    
-    conn = get_db_connection()
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     # Call history table
@@ -173,7 +164,6 @@ def init_database():
     conn.commit()
     conn.close()
     logger.info("✓ Database initialized")
-
 def init_database():
     # ... existing code ...
     conn.commit()
