@@ -164,13 +164,8 @@ def init_database():
     conn.commit()
     conn.close()
     logger.info("✓ Database initialized")
-def init_database():
-    # ... existing code ...
-    conn.commit()
-    conn.close()
-    logger.info("✓ Database initialized")
 
-# ADD THE CDR FUNCTIONS HERE (right after init_database ends)
+# CDR monitoring functions
 async def monitor_cdr():
     """Monitor Asterisk CDR file and import new call records"""
     last_position = 0
@@ -251,9 +246,8 @@ async def process_cdr_record(row):
 
 def migrate_database():
     """Migrate database to add contact names"""
-    conn = get_db_connection()  # Changed this line
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    # ... rest stays the same
     
     # Check if group_members table exists
     cursor.execute('''
