@@ -3,7 +3,9 @@
 Advanced Phone System - Main API Service
 Handles calls, broadcasts, and Home Assistant integration
 """
-
+import csv
+from datetime import datetime
+from typing import List, Dict
 import asyncio
 import os
 import json
@@ -52,6 +54,8 @@ DB_PATH = "/data/database/phone_system.db"
 ASTERISK_SPOOL = "/var/spool/asterisk/outgoing"
 RECORDINGS_PATH = "/data/recordings"
 ASTERISK_SOUNDS = "/var/lib/asterisk/sounds/custom"
+# CDR file path
+CDR_FILE = "/var/log/asterisk/cdr-csv/Master.csv"
 
 
 # Home Assistant API
@@ -140,9 +144,120 @@ def init_database():
         )
     ''')
     
+    # Call Detail Records table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS call_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uniqueid TEXT UNIQUE,
+            caller_id TEXT,
+            source_number TEXT,
+            destination_number TEXT,
+            context TEXT,
+            channel TEXT,
+            destination_channel TEXT,
+            extension TEXT,
+            call_type TEXT,
+            direction TEXT,
+            start_time TEXT,
+            answer_time TEXT,
+            end_time TEXT,
+            duration INTEGER,
+            billsec INTEGER,
+            disposition TEXT,
+            broadcast_id TEXT,
+            recording_id TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
     conn.commit()
     conn.close()
     logger.info("✓ Database initialized")
+
+def init_database():
+    # ... existing code ...
+    conn.commit()
+    conn.close()
+    logger.info("✓ Database initialized")
+
+# ADD THE CDR FUNCTIONS HERE (right after init_database ends)
+async def monitor_cdr():
+    """Monitor Asterisk CDR file and import new call records"""
+    last_position = 0
+    
+    while True:
+        try:
+            if os.path.exists(CDR_FILE):
+                with open(CDR_FILE, 'r') as f:
+                    f.seek(last_position)
+                    reader = csv.reader(f)
+                    for row in reader:
+                        if len(row) >= 16:
+                            await process_cdr_record(row)
+                    last_position = f.tell()
+            await asyncio.sleep(2)
+        except Exception as e:
+            logger.error(f"CDR monitoring error: {e}")
+            await asyncio.sleep(5)
+
+async def process_cdr_record(row):
+    """Process a single CDR record"""
+    try:
+        caller_id, source, dest, context, channel, dst_channel, \
+        lastapp, lastdata, start, answer, end, duration, billsec, \
+        disposition, amaflags, uniqueid = row[:16]
+        
+        call_type = "unknown"
+        direction = "unknown"
+        extension = None
+        broadcast_id = None
+        recording_id = None
+        
+        if "SIP/" in channel:
+            extension = channel.split("/")[1].split("-")[0]
+        
+        if context == "internal":
+            if dest.startswith("1") and len(dest) == 3:
+                call_type = "internal"
+                direction = "internal"
+            elif dest == "999":
+                call_type = "recording_system"
+                direction = "internal"
+                if "RECORDING_ID" in lastdata:
+                    recording_id = lastdata.split("RECORDING_ID=")[1].split(",")[0] if "=" in lastdata else None
+            else:
+                call_type = "outbound"
+                direction = "outbound"
+        elif context == "inbound":
+            call_type = "inbound"
+            direction = "inbound"
+        elif context == "broadcast":
+            call_type = "broadcast"
+            direction = "outbound"
+            if "broadcast_" in channel:
+                broadcast_id = channel.split("broadcast_")[1].split("-")[0]
+        
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        
+        c.execute('''
+            INSERT OR IGNORE INTO call_records 
+            (uniqueid, caller_id, source_number, destination_number, context, 
+             channel, destination_channel, extension, call_type, direction,
+             start_time, answer_time, end_time, duration, billsec, disposition,
+             broadcast_id, recording_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (uniqueid, caller_id, source, dest, context, channel, dst_channel,
+              extension, call_type, direction, start, answer, end, duration,
+              billsec, disposition, broadcast_id, recording_id))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"📞 Recorded call: {source} → {dest} ({call_type})")
+        
+    except Exception as e:
+        logger.error(f"Error processing CDR record: {e}")
 
 def migrate_database():
     """Migrate database to add contact names"""
@@ -478,6 +593,7 @@ async def startup_event():
     """Initialize on startup"""
     init_database()
     migrate_database()  # Add this line
+    asyncio.create_task(monitor_cdr())
     os.makedirs(RECORDINGS_PATH, exist_ok=True)
     os.makedirs(ASTERISK_SOUNDS, exist_ok=True)
     logger.info("✓ API Service started")
@@ -1080,6 +1196,35 @@ async def list_recordings():
         
     except Exception as e:
         logger.error(f"Error listing recordings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ADD THE NEW ENDPOINT HERE (right after the recordings endpoint)
+@app.get("/api/call_records")
+async def get_call_records(limit: int = 50, call_type: str = None):
+    """Get call records with optional filtering"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        
+        query = "SELECT * FROM call_records"
+        params = []
+        
+        if call_type:
+            query += " WHERE call_type = ?"
+            params.append(call_type)
+        
+        query += " ORDER BY start_time DESC LIMIT ?"
+        params.append(limit)
+        
+        c.execute(query, params)
+        columns = [description[0] for description in c.description]
+        results = [dict(zip(columns, row)) for row in c.fetchall()]
+        
+        conn.close()
+        return results
+        
+    except Exception as e:
+        logger.error(f"Error fetching call records: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/recordings/upload")
