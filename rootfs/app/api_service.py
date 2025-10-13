@@ -201,12 +201,16 @@ async def monitor_cdr():
 async def process_cdr_record(row):
     """Process a single CDR record"""
     try:
-        # Skip header row
-        if len(row) < 16 or row[14] in ['amaflags', 'DOCUMENTATION']:
+        # Skip if not enough columns or if it's a header
+        if len(row) < 16:
             return
             
-        # Parse the CDR row
-        caller_id = row[0]
+        # Check for header row (amaflags column will be "DOCUMENTATION" in header)
+        if row[14] == 'DOCUMENTATION':
+            return
+        
+        # Parse CDR with correct column positions (18 columns total)
+        accountcode = row[0]  # Usually empty
         source = row[1]
         dest = row[2]
         context = row[3]
@@ -221,22 +225,20 @@ async def process_cdr_record(row):
         billsec = row[12]
         disposition = row[13]
         amaflags = row[14]
-        uniqueid = row[15] if len(row) > 15 else f"{source}_{dest}_{start}"
+        uniqueid = row[15]
         
-        logger.info(f"📞 Processing call: {source} → {dest} via {channel}")
+        # Extract caller_id from channel if it exists
+        caller_id = ""
+        if "<" in channel and ">" in channel:
+            caller_id = channel.split("<")[1].split(">")[0]
+        
+        logger.info(f"📞 Processing call: {source} → {dest} via context {context}")
         
         call_type = "unknown"
         direction = "unknown"
         extension = None
         broadcast_id = None
         recording_id = None
-        
-        # Parse extension from channel
-        if "SIP/" in channel and channel.startswith("SIP/"):
-            try:
-                extension = channel.split("/")[1].split("-")[0]
-            except:
-                pass
         
         # Determine call type based on context and destination
         if context == "internal":
@@ -246,11 +248,6 @@ async def process_cdr_record(row):
             elif dest == "999":
                 call_type = "recording_system"
                 direction = "internal"
-                if "RECORDING_ID" in lastdata:
-                    try:
-                        recording_id = lastdata.split("RECORDING_ID=")[1].split(",")[0]
-                    except:
-                        pass
             else:
                 call_type = "outbound"
                 direction = "outbound"
@@ -260,11 +257,13 @@ async def process_cdr_record(row):
         elif context == "broadcast":
             call_type = "broadcast"
             direction = "outbound"
-            if "broadcast_" in channel:
-                try:
-                    broadcast_id = channel.split("broadcast_")[1].split("-")[0]
-                except:
-                    pass
+        
+        # Parse extension from dst_channel (the answering channel)
+        if "SIP/" in dst_channel:
+            try:
+                extension = dst_channel.split("/")[1].split("-")[0]
+            except:
+                pass
         
         # Insert into database
         conn = sqlite3.connect(DB_PATH)
@@ -278,8 +277,10 @@ async def process_cdr_record(row):
              broadcast_id, recording_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (uniqueid, caller_id, source, dest, context, channel, dst_channel,
-              extension, call_type, direction, start, answer, end, int(duration) if duration.isdigit() else 0,
-              int(billsec) if billsec.isdigit() else 0, disposition, broadcast_id, recording_id))
+              extension, call_type, direction, start, answer, end, 
+              int(duration) if duration.isdigit() else 0,
+              int(billsec) if billsec.isdigit() else 0, 
+              disposition, broadcast_id, recording_id))
         
         conn.commit()
         conn.close()
