@@ -461,59 +461,85 @@
     </div>
 
     <script>
-        function showTab(tabName) {
-            document.querySelectorAll('.content').forEach(el => el.classList.add('hidden'));
-            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
-            
-            document.getElementById(`${tabName}-tab`).classList.remove('hidden');
-            event.target.classList.add('active');
-            
-            if (tabName === 'history') loadCallRecords();
-        }
-
-        async function loadCallRecords() {
-    try {
-        const response = await fetch('/api/call_records?limit=50');
-        const records = await response.json();
+    function showTab(tabName) {
+        document.querySelectorAll('.content').forEach(el => el.classList.add('hidden'));
+        document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
         
-        const tableBody = document.getElementById('call-records-table');
+        document.getElementById(`${tabName}-tab`).classList.remove('hidden');
+        event.target.classList.add('active');
         
-        if (!records || records.length === 0) {
-            tableBody.innerHTML = `
-                <tr>
-                    <td colspan="5" style="padding: 40px; text-align: center; color: #6c757d;">
-                        No call history available yet. Make a call to see it here!
-                    </td>
-                </tr>
-            `;
-            return;
-        }
-        
-        tableBody.innerHTML = records.map(record => {
-            const startTime = new Date(record.start_time);
-            const dateStr = startTime.toString() !== 'Invalid Date' 
-                ? `${startTime.toLocaleDateString()} ${startTime.toLocaleTimeString()}`
-                : record.start_time;
-            
-            return `
-                <tr style="border-bottom: 1px solid #dee2e6;">
-                    <td style="padding: 12px;">${dateStr}</td>
-                    <td style="padding: 12px;">${record.source_number || 'Unknown'}</td>
-                    <td style="padding: 12px;">${record.destination_number || 'Unknown'}</td>
-                    <td style="padding: 12px;">${record.duration || 0}s</td>
-                    <td style="padding: 12px;">
-                        <span style="background: #48bb78; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
-                            ${record.disposition || 'Unknown'}
-                        </span>
-                    </td>
-                </tr>
-            `;
-        }).join('');
-        
-    } catch (error) {
-        console.error('Error loading call records:', error);
+        if (tabName === 'history') loadCallRecords();
     }
-}
-    </script>
+
+    async function loadCallRecords() {
+        try {
+            const response = await fetch('/api/call_records?limit=50');
+            const records = await response.json();
+            
+            // Debug: Let's see what we're getting
+            console.log('CDR Records:', records);
+            if (records && records.length > 0) {
+                console.log('First record:', records[0]);
+            }
+            
+            const tableBody = document.getElementById('call-records-table');
+            
+            if (!records || records.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="5" style="padding: 40px; text-align: center; color: #6c757d;">
+                            No call history available yet. Make a call to see it here!
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tableBody.innerHTML = records.map(record => {
+                // Try to parse the calldate field (this is the correct field in Asterisk CDR)
+                const dateField = record.calldate || record.start_time || record.start;
+                let dateStr = 'Unknown Time';
+                
+                if (dateField) {
+                    const date = new Date(dateField);
+                    if (date.toString() !== 'Invalid Date') {
+                        dateStr = `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+                    } else {
+                        dateStr = dateField; // Show raw value if can't parse
+                    }
+                }
+                
+                // Get disposition status
+                const disposition = record.disposition || record.status || 'Unknown';
+                
+                // Color code the status
+                const statusColors = {
+                    'ANSWERED': '#48bb78',
+                    'NO ANSWER': '#ed8936',
+                    'BUSY': '#f56565',
+                    'FAILED': '#dc3545'
+                };
+                const statusColor = statusColors[disposition] || '#718096';
+                
+                return `
+                    <tr style="border-bottom: 1px solid #dee2e6;">
+                        <td style="padding: 12px;">${dateStr}</td>
+                        <td style="padding: 12px;">${record.source_number || record.src || 'Unknown'}</td>
+                        <td style="padding: 12px;">${record.destination_number || record.dst || 'Unknown'}</td>
+                        <td style="padding: 12px;">${record.duration || 0}s</td>
+                        <td style="padding: 12px;">
+                            <span style="background: ${statusColor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
+                                ${disposition}
+                            </span>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            
+        } catch (error) {
+            console.error('Error loading call records:', error);
+        }
+    }
+</script>
 </body>
 </html>
