@@ -222,11 +222,9 @@ async def process_cdr_record(row):
     try:
         # Skip if not enough columns
         if len(row) < 17:
-            logger.warning(f"❌ Skipping row - only {len(row)} columns")
             return
         
-        # Parse CDR with CORRECT column positions (18 columns total)
-        accountcode = row[0]
+        # Parse CDR with correct column positions (18 columns)
         source = row[1]
         dest = row[2]
         context = row[3]
@@ -240,21 +238,16 @@ async def process_cdr_record(row):
         duration = row[11]
         billsec = row[12]
         disposition = row[13]
-        amaflags = row[14]
-        # Skip row[15] - it's empty
-        uniqueid = row[16]  # ← THE FIX! Use column 16 instead of 15
+        uniqueid = row[16]
         
         # Skip if uniqueid is empty
         if not uniqueid or uniqueid == '':
-            logger.warning(f"❌ Invalid uniqueid: {uniqueid}")
             return
         
         # Extract caller_id
         caller_id = ""
         if "<" in channel and ">" in channel:
             caller_id = channel.split("<")[1].split(">")[0]
-        
-        logger.info(f"📞 Processing call: {source} → {dest} (uniqueid: {uniqueid})")
         
         # Determine call type
         call_type = "unknown"
@@ -278,7 +271,7 @@ async def process_cdr_record(row):
             call_type = "broadcast"
             direction = "outbound"
         
-        # Parse extension
+        # Parse extension from dst_channel
         if "SIP/" in dst_channel:
             try:
                 extension = dst_channel.split("/")[1].split("-")[0]
@@ -311,12 +304,10 @@ async def process_cdr_record(row):
         conn.commit()
         conn.close()
         
-        logger.info(f"✅ SAVED: {source} → {dest} ({call_type}, {disposition})")
+        logger.info(f"📞 Recorded call: {source} → {dest} ({call_type})")
         
     except Exception as e:
-        logger.error(f"❌ ERROR: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
+        logger.error(f"Error processing CDR: {e}")
 
 def migrate_database():
     """Migrate database to add contact names"""
