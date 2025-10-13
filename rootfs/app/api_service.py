@@ -201,16 +201,29 @@ async def monitor_cdr():
 async def process_cdr_record(row):
     """Process a single CDR record"""
     try:
-        # Log the raw row for debugging
-        logger.debug(f"Processing CDR row: {row}")
-        
-        caller_id, source, dest, context, channel, dst_channel, \
-        lastapp, lastdata, start, answer, end, duration, billsec, \
-        disposition, amaflags, uniqueid = row[:16]
-        
-        # Skip if this looks like a header
-        if caller_id in ['accountcode', 'DOCUMENTATION']:
+        # Skip header row
+        if len(row) < 16 or row[14] in ['amaflags', 'DOCUMENTATION']:
             return
+            
+        # Parse the CDR row
+        caller_id = row[0]
+        source = row[1]
+        dest = row[2]
+        context = row[3]
+        channel = row[4]
+        dst_channel = row[5]
+        lastapp = row[6]
+        lastdata = row[7]
+        start = row[8]
+        answer = row[9]
+        end = row[10]
+        duration = row[11]
+        billsec = row[12]
+        disposition = row[13]
+        amaflags = row[14]
+        uniqueid = row[15] if len(row) > 15 else f"{source}_{dest}_{start}"
+        
+        logger.info(f"📞 Processing call: {source} → {dest} via {channel}")
         
         call_type = "unknown"
         direction = "unknown"
@@ -218,9 +231,14 @@ async def process_cdr_record(row):
         broadcast_id = None
         recording_id = None
         
-        if "SIP/" in channel:
-            extension = channel.split("/")[1].split("-")[0]
+        # Parse extension from channel
+        if "SIP/" in channel and channel.startswith("SIP/"):
+            try:
+                extension = channel.split("/")[1].split("-")[0]
+            except:
+                pass
         
+        # Determine call type based on context and destination
         if context == "internal":
             if dest.startswith("1") and len(dest) == 3:
                 call_type = "internal"
@@ -229,7 +247,10 @@ async def process_cdr_record(row):
                 call_type = "recording_system"
                 direction = "internal"
                 if "RECORDING_ID" in lastdata:
-                    recording_id = lastdata.split("RECORDING_ID=")[1].split(",")[0] if "=" in lastdata else None
+                    try:
+                        recording_id = lastdata.split("RECORDING_ID=")[1].split(",")[0]
+                    except:
+                        pass
             else:
                 call_type = "outbound"
                 direction = "outbound"
@@ -240,8 +261,12 @@ async def process_cdr_record(row):
             call_type = "broadcast"
             direction = "outbound"
             if "broadcast_" in channel:
-                broadcast_id = channel.split("broadcast_")[1].split("-")[0]
+                try:
+                    broadcast_id = channel.split("broadcast_")[1].split("-")[0]
+                except:
+                    pass
         
+        # Insert into database
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
@@ -253,17 +278,17 @@ async def process_cdr_record(row):
              broadcast_id, recording_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (uniqueid, caller_id, source, dest, context, channel, dst_channel,
-              extension, call_type, direction, start, answer, end, duration,
-              billsec, disposition, broadcast_id, recording_id))
+              extension, call_type, direction, start, answer, end, int(duration) if duration.isdigit() else 0,
+              int(billsec) if billsec.isdigit() else 0, disposition, broadcast_id, recording_id))
         
         conn.commit()
         conn.close()
         
-        logger.info(f"📞 Recorded call: {source} → {dest} ({call_type})")
+        logger.info(f"✓ Recorded call: {source} → {dest} ({call_type}, {disposition})")
         
     except Exception as e:
         logger.error(f"Error processing CDR record: {e}")
-
+        logger.error(f"Row data: {row}")
 
 def migrate_database():
     """Migrate database to add contact names"""
