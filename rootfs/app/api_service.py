@@ -171,49 +171,27 @@ async def monitor_cdr():
     last_position = 0
     first_run = True
     
-    logger.info(f"🔍 CDR Monitor started. Looking for: {CDR_FILE}")
-    
     while True:
         try:
             if os.path.exists(CDR_FILE):
-                if first_run:
-                    logger.info(f"📂 CDR file found! Processing from beginning...")
-                    
                 with open(CDR_FILE, 'r') as f:
-                    # On first run, read entire file from beginning
                     if first_run:
                         f.seek(0)
                         first_run = False
                     else:
                         f.seek(last_position)
                     
-                    # Read new lines
-                    content = f.read()
-                    if content.strip():
-                        logger.info(f"📄 Found {len(content)} bytes of CDR data")
-                        f.seek(last_position if not first_run else 0)
-                        
-                        reader = csv.reader(f)
-                        row_count = 0
-                        for row in reader:
-                            row_count += 1
-                            logger.info(f"📝 Processing row {row_count}: {len(row)} columns")
-                            if len(row) >= 16:
-                                await process_cdr_record(row)
-                        
-                        logger.info(f"✓ Processed {row_count} rows")
+                    reader = csv.reader(f)
+                    for row in reader:
+                        if len(row) >= 17:
+                            await process_cdr_record(row)
                     
-                    # Update position
                     last_position = f.tell()
-            else:
-                logger.warning(f"⚠️ CDR file not found: {CDR_FILE}")
             
             await asyncio.sleep(2)
             
         except Exception as e:
-            logger.error(f"❌ CDR monitoring error: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
+            logger.error(f"CDR monitoring error: {e}")
             await asyncio.sleep(5)
 
 
