@@ -755,219 +755,218 @@
 
     <script>
         const API_URL = window.location.origin;
-        let phoneNumbers = [];
-        let groupContacts = [];
+let phoneNumbers = [];
+let groupContacts = [];
 
-        // Tab switching
-        function showTab(tabName) {
-            document.querySelectorAll('.content').forEach(el => el.classList.add('hidden'));
-            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
-            
-            document.getElementById(`${tabName}-tab`).classList.remove('hidden');
-            event.target.classList.add('active');
-            
-            // Load data for specific tabs
-            if (tabName === 'dashboard') loadDashboard();
-            if (tabName === 'make-call') loadRecordingsForSelect('call-recording-select');
-            if (tabName === 'recordings') loadRecordings();
-            if (tabName === 'broadcast') {
-                loadBroadcasts();
-                loadRecordingsForSelect('broadcast-recording-select');
-            }
-            if (tabName === 'groups') loadGroups();
-            if (tabName === 'history') loadCallRecords();
-        }
-
-        // Toggle functions
-        function toggleCallMessageFields() {
-            const type = document.getElementById('call-message-type').value;
-            document.getElementById('call-tts-group').classList.toggle('hidden', type !== 'tts');
-            document.getElementById('call-recording-group').classList.toggle('hidden', type !== 'recording');
-        }
-
-        function toggleBroadcastMessageFields() {
-            const type = document.getElementById('broadcast-message-type').value;
-            document.getElementById('broadcast-tts-group').classList.toggle('hidden', type !== 'tts');
-            document.getElementById('broadcast-recording-group').classList.toggle('hidden', type !== 'recording');
-        }
-
-        function toggleRecipientFields() {
-            const type = document.getElementById('recipient-type').value;
-            document.getElementById('manual-numbers-group').classList.toggle('hidden', type !== 'manual');
-            document.getElementById('group-select-group').classList.toggle('hidden', type !== 'group');
-        }
-
-        // Phone number management
-        function addPhone() {
-            const input = document.getElementById('phone-input');
-            const phone = input.value.trim();
-            
-            if (phone && !phoneNumbers.includes(phone)) {
-                phoneNumbers.push(phone);
-                updatePhoneList();
-                input.value = '';
-            }
-        }
-
-        function removePhone(phone) {
-            phoneNumbers = phoneNumbers.filter(p => p !== phone);
-            updatePhoneList();
-        }
-
-        function updatePhoneList() {
-            const list = document.getElementById('phone-list');
-            list.innerHTML = phoneNumbers.map(phone => `
-                <div class="phone-tag">
-                    ${phone}
-                    <button onclick="removePhone('${phone}')">×</button>
-                </div>
-            `).join('');
-        }
-
-        // Group contact management
-                function addGroupContact() {
-                    const nameInput = document.getElementById('contact-name-input');
-                    const phoneInput = document.getElementById('contact-phone-input');
+// Tab switching
+function showTab(tabName) {
+    document.querySelectorAll('.content').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
     
-                    const name = nameInput.value.trim();
-                    const phone = phoneInput.value.trim();
+    document.getElementById(`${tabName}-tab`).classList.remove('hidden');
+    event.target.classList.add('active');
     
-                    if (!name || !phone) {
-                        showAlert('group-alert', 'Please enter both name and phone number', 'error');
-                        return;
-                    }
-    
-                    if (groupContacts.some(c => c.phone_number === phone)) {
-                        showAlert('group-alert', 'This phone number is already in the list', 'error');
-                        return;
-                    }
-    
-                    groupContacts.push({ name: name, phone_number: phone });
-                    updateGroupContactsList();
-    
-                    nameInput.value = '';
-                    phoneInput.value = '';
-                    nameInput.focus();
-                }
+    // Load data for specific tabs
+    if (tabName === 'dashboard') loadDashboard();
+    if (tabName === 'make-call') loadRecordingsForSelect('call-recording-select');
+    if (tabName === 'recordings') loadRecordings();
+    if (tabName === 'broadcast') {
+        loadBroadcasts();
+        loadRecordingsForSelect('broadcast-recording-select');
+    }
+    if (tabName === 'groups') loadGroups();
+    if (tabName === 'history') loadCallRecords();
+}
 
-                 function removeGroupContact(index) {
-                    groupContacts.splice(index, 1);
-                    updateGroupContactsList();
-                }
+// Toggle functions
+function toggleCallMessageFields() {
+    const type = document.getElementById('call-message-type').value;
+    document.getElementById('call-tts-group').classList.toggle('hidden', type !== 'tts');
+    document.getElementById('call-recording-group').classList.toggle('hidden', type !== 'recording');
+}
 
-                function editGroupContact(index) {
-                    const contact = groupContacts[index];
-                    const newName = prompt('Edit contact name:', contact.name);
-                    const newPhone = prompt('Edit phone number:', contact.phone_number);
+function toggleBroadcastMessageFields() {
+    const type = document.getElementById('broadcast-message-type').value;
+    document.getElementById('broadcast-tts-group').classList.toggle('hidden', type !== 'tts');
+    document.getElementById('broadcast-recording-group').classList.toggle('hidden', type !== 'recording');
+}
+
+function toggleRecipientFields() {
+    const type = document.getElementById('recipient-type').value;
+    document.getElementById('manual-numbers-group').classList.toggle('hidden', type !== 'manual');
+    document.getElementById('group-select-group').classList.toggle('hidden', type !== 'group');
+}
+
+// Phone number management
+function addPhone() {
+    const input = document.getElementById('phone-input');
+    const phone = input.value.trim();
     
-                    if (newName && newPhone) {
-                        groupContacts[index] = { name: newName, phone_number: newPhone };
-                        updateGroupContactsList();
-                    }
-                }
+    if (phone && !phoneNumbers.includes(phone)) {
+        phoneNumbers.push(phone);
+        updatePhoneList();
+        input.value = '';
+    }
+}
 
-                function updateGroupContactsList() {
-                    const list = document.getElementById('group-contacts-list');
-    
-                    if (groupContacts.length === 0) {
-                        list.innerHTML = '<p style="color: #666; font-size: 14px; margin-top: 10px;">No contacts added yet</p>';
-                        return;
-                    }
-    
-                    list.innerHTML = groupContacts.map((contact, index) => `
-                        <div class="contact-card">
-                            <div class="contact-info">
-                                <div class="contact-name">${contact.name}</div>
-                                <div class="contact-phone">${contact.phone_number}</div>
-                            </div>
-                            <div class="contact-actions">
-                                <button class="btn btn-secondary btn-small" onclick="editGroupContact(${index})">Edit</button>
-                     <button class="btn btn-danger btn-small" onclick="removeGroupContact(${index})">Delete</button>
-                            </div>
-                        </div>
-                    `).join('');
-                }
+function removePhone(phone) {
+    phoneNumbers = phoneNumbers.filter(p => p !== phone);
+    updatePhoneList();
+}
 
-        // Alert functions
-        function showAlert(elementId, message, type) {
-            const alert = document.getElementById(elementId);
-            alert.className = `alert alert-${type}`;
-            alert.textContent = message;
-            alert.style.display = 'block';
-            setTimeout(() => alert.style.display = 'none', 5000);
-        }
+function updatePhoneList() {
+    const list = document.getElementById('phone-list');
+    list.innerHTML = phoneNumbers.map(phone => `
+        <div class="phone-tag">
+            ${phone}
+            <button onclick="removePhone('${phone}')">×</button>
+        </div>
+    `).join('');
+}
 
-        // File upload handling
-        const uploadArea = document.getElementById('upload-area');
+// Group contact management
+function addGroupContact() {
+    const nameInput = document.getElementById('contact-name-input');
+    const phoneInput = document.getElementById('contact-phone-input');
+
+    const name = nameInput.value.trim();
+    const phone = phoneInput.value.trim();
+
+    if (!name || !phone) {
+        showAlert('group-alert', 'Please enter both name and phone number', 'error');
+        return;
+    }
+
+    if (groupContacts.some(c => c.phone_number === phone)) {
+        showAlert('group-alert', 'This phone number is already in the list', 'error');
+        return;
+    }
+
+    groupContacts.push({ name: name, phone_number: phone });
+    updateGroupContactsList();
+
+    nameInput.value = '';
+    phoneInput.value = '';
+    nameInput.focus();
+}
+
+function removeGroupContact(index) {
+    groupContacts.splice(index, 1);
+    updateGroupContactsList();
+}
+
+function editGroupContact(index) {
+    const contact = groupContacts[index];
+    const newName = prompt('Edit contact name:', contact.name);
+    const newPhone = prompt('Edit phone number:', contact.phone_number);
+
+    if (newName && newPhone) {
+        groupContacts[index] = { name: newName, phone_number: newPhone };
+        updateGroupContactsList();
+    }
+}
+
+function updateGroupContactsList() {
+    const list = document.getElementById('group-contacts-list');
+
+    if (groupContacts.length === 0) {
+        list.innerHTML = '<p style="color: #666; font-size: 14px; margin-top: 10px;">No contacts added yet</p>';
+        return;
+    }
+
+    list.innerHTML = groupContacts.map((contact, index) => `
+        <div class="contact-card">
+            <div class="contact-info">
+                <div class="contact-name">${contact.name}</div>
+                <div class="contact-phone">${contact.phone_number}</div>
+            </div>
+            <div class="contact-actions">
+                <button class="btn btn-secondary btn-small" onclick="editGroupContact(${index})">Edit</button>
+                <button class="btn btn-danger btn-small" onclick="removeGroupContact(${index})">Delete</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Alert functions
+function showAlert(elementId, message, type) {
+    const alert = document.getElementById(elementId);
+    alert.className = `alert alert-${type}`;
+    alert.textContent = message;
+    alert.style.display = 'block';
+    setTimeout(() => alert.style.display = 'none', 5000);
+}
+
+// File upload handling
+const uploadArea = document.getElementById('upload-area');
+
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    uploadArea.addEventListener(eventName, preventDefaults, false);
+});
+
+function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+}
+
+['dragenter', 'dragover'].forEach(eventName => {
+    uploadArea.addEventListener(eventName, () => {
+        uploadArea.classList.add('dragover');
+    }, false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+    uploadArea.addEventListener(eventName, () => {
+        uploadArea.classList.remove('dragover');
+    }, false);
+});
+
+uploadArea.addEventListener('drop', handleDrop, false);
+
+function handleDrop(e) {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    if (files.length > 0) {
+        uploadFile(files[0]);
+    }
+}
+
+function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (file) {
+        uploadFile(file);
+    }
+}
+
+async function uploadFile(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        showAlert('recording-alert', 'Uploading...', 'info');
         
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            uploadArea.addEventListener(eventName, preventDefaults, false);
+        const response = await fetch(`${API_URL}/api/recordings/upload`, {
+            method: 'POST',
+            body: formData
         });
 
-        function preventDefaults(e) {
-            e.preventDefault();
-            e.stopPropagation();
+        if (response.ok) {
+            const result = await response.json();
+            showAlert('recording-alert', result.message, 'success');
+            setTimeout(loadRecordings, 1000);
+        } else {
+            const error = await response.json();
+            showAlert('recording-alert', error.detail || 'Upload failed', 'error');
         }
+    } catch (error) {
+        showAlert('recording-alert', `Error: ${error.message}`, 'error');
+    }
+    
+    document.getElementById('file-input').value = '';
+}
 
-        ['dragenter', 'dragover'].forEach(eventName => {
-            uploadArea.addEventListener(eventName, () => {
-                uploadArea.classList.add('dragover');
-            }, false);
-        });
-
-        ['dragleave', 'drop'].forEach(eventName => {
-            uploadArea.addEventListener(eventName, () => {
-                uploadArea.classList.remove('dragover');
-            }, false);
-        });
-
-        uploadArea.addEventListener('drop', handleDrop, false);
-
-        function handleDrop(e) {
-            const dt = e.dataTransfer;
-            const files = dt.files;
-            if (files.length > 0) {
-                uploadFile(files[0]);
-            }
-        }
-
-        function handleFileSelect(event) {
-            const file = event.target.files[0];
-            if (file) {
-                uploadFile(file);
-            }
-        }
-
-        async function uploadFile(file) {
-            const formData = new FormData();
-            formData.append('file', file);
-
-            try {
-                showAlert('recording-alert', 'Uploading...', 'info');
-                
-                const response = await fetch(`${API_URL}/api/recordings/upload`, {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (response.ok) {
-                    const result = await response.json();
-                    showAlert('recording-alert', result.message, 'success');
-                    setTimeout(loadRecordings, 1000);
-                } else {
-                    const error = await response.json();
-                    showAlert('recording-alert', error.detail || 'Upload failed', 'error');
-                }
-            } catch (error) {
-                showAlert('recording-alert', `Error: ${error.message}`, 'error');
-            }
-            
-            // Reset file input
-            document.getElementById('file-input').value = '';
-        }
-
-        // Recordings management
-        async function loadRecordings() {
+// Recordings management
+async function loadRecordings() {
     const list = document.getElementById('recordings-list');
     list.innerHTML = '<div class="loading"><div class="spinner"></div>Loading recordings...</div>';
 
@@ -1003,29 +1002,29 @@
         list.innerHTML = `<p style="color: #dc3545;">Error: ${error.message}</p>`;
     }
 }
-        async function loadRecordingsForSelect(selectId) {
-            const select = document.getElementById(selectId);
-            try {
-                const response = await fetch(`${API_URL}/api/recordings`);
-                const data = await response.json();
-                
-                if (data.recordings.length === 0) {
-                    select.innerHTML = '<option value="">No recordings available</option>';
-                    return;
-                }
 
-                select.innerHTML = data.recordings.map(r => 
-                    `<option value="${r.display_name}">${r.display_name} (${r.format})</option>`
-                ).join('');
-            } catch (error) {
-                select.innerHTML = '<option value="">Error loading recordings</option>';
-            }
+async function loadRecordingsForSelect(selectId) {
+    const select = document.getElementById(selectId);
+    try {
+        const response = await fetch(`${API_URL}/api/recordings`);
+        const data = await response.json();
+        
+        if (data.recordings.length === 0) {
+            select.innerHTML = '<option value="">No recordings available</option>';
+            return;
         }
 
-        let currentAudio = null;
+        select.innerHTML = data.recordings.map(r => 
+            `<option value="${r.display_name}">${r.display_name} (${r.format})</option>`
+        ).join('');
+    } catch (error) {
+        select.innerHTML = '<option value="">Error loading recordings</option>';
+    }
+}
+
+let currentAudio = null;
 
 function playRecording(filename) {
-    // Stop any currently playing audio
     if (currentAudio) {
         currentAudio.pause();
         currentAudio = null;
@@ -1046,47 +1045,47 @@ function stopRecording() {
     }
 }
 
-        async function renameRecording(filename) {
-            const newName = prompt('Enter new name (without extension):', filename.split('.')[0]);
-            if (!newName) return;
+async function renameRecording(filename) {
+    const newName = prompt('Enter new name (without extension):', filename.split('.')[0]);
+    if (!newName) return;
 
-            try {
-                const response = await fetch(`${API_URL}/api/recordings/rename?old_name=${filename}&new_name=${newName}`, {
-                    method: 'POST'
-                });
+    try {
+        const response = await fetch(`${API_URL}/api/recordings/rename?old_name=${filename}&new_name=${newName}`, {
+            method: 'POST'
+        });
 
-                if (response.ok) {
-                    showAlert('recording-alert', 'Recording renamed successfully!', 'success');
-                    setTimeout(loadRecordings, 1000);
-                } else {
-                    const error = await response.json();
-                    showAlert('recording-alert', error.detail || 'Rename failed', 'error');
-                }
-            } catch (error) {
-                showAlert('recording-alert', `Error: ${error.message}`, 'error');
-            }
+        if (response.ok) {
+            showAlert('recording-alert', 'Recording renamed successfully!', 'success');
+            setTimeout(loadRecordings, 1000);
+        } else {
+            const error = await response.json();
+            showAlert('recording-alert', error.detail || 'Rename failed', 'error');
         }
+    } catch (error) {
+        showAlert('recording-alert', `Error: ${error.message}`, 'error');
+    }
+}
 
-        async function deleteRecording(filename) {
-            if (!confirm(`Are you sure you want to delete "${filename}"?`)) return;
+async function deleteRecording(filename) {
+    if (!confirm(`Are you sure you want to delete "${filename}"?`)) return;
 
-            try {
-                const response = await fetch(`${API_URL}/api/recordings/${filename}`, {
-                    method: 'DELETE'
-                });
+    try {
+        const response = await fetch(`${API_URL}/api/recordings/${filename}`, {
+            method: 'DELETE'
+        });
 
-                if (response.ok) {
-                    showAlert('recording-alert', 'Recording deleted successfully!', 'success');
-                    setTimeout(loadRecordings, 1000);
-                } else {
-                    showAlert('recording-alert', 'Delete failed', 'error');
-                }
-            } catch (error) {
-                showAlert('recording-alert', `Error: ${error.message}`, 'error');
-            }
+        if (response.ok) {
+            showAlert('recording-alert', 'Recording deleted successfully!', 'success');
+            setTimeout(loadRecordings, 1000);
+        } else {
+            showAlert('recording-alert', 'Delete failed', 'error');
         }
+    } catch (error) {
+        showAlert('recording-alert', `Error: ${error.message}`, 'error');
+    }
+}
 
-        // Make Call Form
+// Make Call Form
 document.getElementById('call-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     
@@ -1097,35 +1096,34 @@ document.getElementById('call-form').addEventListener('submit', async (e) => {
         max_retries: parseInt(document.getElementById('call-retries').value),
         pre_message_delay: parseInt(document.getElementById('call-pre-delay').value),
         max_ring_time: parseInt(document.getElementById('call-ring-time').value)
-            };
+    };
 
-            if (type === 'tts') {
-                data.tts_text = document.getElementById('call-tts').value;
-            } else {
-                data.recording_file = document.getElementById('call-recording-select').value;
-            }
+    if (type === 'tts') {
+        data.tts_text = document.getElementById('call-tts').value;
+    } else {
+        data.recording_file = document.getElementById('call-recording-select').value;
+    }
 
-            try {
-                const response = await fetch(`${API_URL}/api/call`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
-
-                if (response.ok) {
-                    const result = await response.json();
-                    showAlert('call-alert', `Call initiated! Call ID: ${result.call_id}`, 'success');
-                    e.target.reset();
-                } else {
-                    showAlert('call-alert', 'Failed to make call', 'error');
-                }
-              } catch (error) {
-                showAlert('call-alert', `Error: ${error.message}`, 'error');
-            }
+    try {
+        const response = await fetch(`${API_URL}/api/call`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
         });
 
+        if (response.ok) {
+            const result = await response.json();
+            showAlert('call-alert', `Call initiated! Call ID: ${result.call_id}`, 'success');
+            e.target.reset();
+        } else {
+            showAlert('call-alert', 'Failed to make call', 'error');
+        }
+    } catch (error) {
+        showAlert('call-alert', `Error: ${error.message}`, 'error');
+    }
+});
 
-        async function loadActiveCalls() {
+async function loadActiveCalls() {
     const list = document.getElementById('active-calls-list');
     
     try {
@@ -1165,7 +1163,7 @@ document.getElementById('call-form').addEventListener('submit', async (e) => {
                         <span class="status-badge" style="background: ${statusColors[call.status]}; color: white;">
                             ${statusLabels[call.status]}
                         </span>
-                        <button class="btn btn-danger btn-small" data-call-id="${call.call_id}" onclick="hangupCall('${call.call_id}')">Hangup</button>
+                        <button class="btn btn-danger btn-small" onclick="hangupCall('${call.call_id}')">Hangup</button>
                     </div>
                 </div>
             `;
@@ -1174,230 +1172,193 @@ document.getElementById('call-form').addEventListener('submit', async (e) => {
         list.innerHTML = `<p style="color: #dc3545;">Error: ${error.message}</p>`;
     }
 }
-                // Broadcast Form
-        document.getElementById('broadcast-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-    
-            const recipientType = document.getElementById('recipient-type').value;
-            const type = document.getElementById('broadcast-message-type').value;
-    
-            const data = {
-                name: document.getElementById('broadcast-name').value,
-                concurrent_calls: parseInt(document.getElementById('broadcast-concurrent').value),
-                caller_id: document.getElementById('broadcast-caller-id').value || null,
-                pre_message_delay: parseInt(document.getElementById('broadcast-pre-delay').value),
-                max_ring_time: parseInt(document.getElementById('broadcast-ring-time').value)
-            };
 
-            if (recipientType === 'manual') {
-                if (phoneNumbers.length === 0) {
-                    showAlert('broadcast-alert', 'Please add at least one phone number', 'error');
-                    return;
-                }
-                data.phone_numbers = phoneNumbers;
-            } else {
-                data.group_name = document.getElementById('group-select').value;
-            }
+// Broadcast Form
+document.getElementById('broadcast-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
 
-            if (type === 'tts') {
-                data.tts_text = document.getElementById('broadcast-tts').value;
-            } else {
-                data.recording_file = document.getElementById('broadcast-recording-select').value;
-            }
+    const recipientType = document.getElementById('recipient-type').value;
+    const type = document.getElementById('broadcast-message-type').value;
 
-            try {
-                const response = await fetch(`${API_URL}/api/broadcast`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
+    const data = {
+        name: document.getElementById('broadcast-name').value,
+        concurrent_calls: parseInt(document.getElementById('broadcast-concurrent').value),
+        caller_id: document.getElementById('broadcast-caller-id').value || null,
+        pre_message_delay: parseInt(document.getElementById('broadcast-pre-delay').value),
+        max_ring_time: parseInt(document.getElementById('broadcast-ring-time').value)
+    };
 
-                if (response.ok) {
-                    const result = await response.json();
-                    showAlert('broadcast-alert', `Broadcast started! ID: ${result.broadcast_id}`, 'success');
-                    e.target.reset();
-                    phoneNumbers = [];
-                    updatePhoneList();
-                    setTimeout(loadBroadcasts, 1000);
-                } else {
-                    showAlert('broadcast-alert', 'Failed to create broadcast', 'error');
-                }
-            } catch (error) {
-                showAlert('broadcast-alert', `Error: ${error.message}`, 'error');
-            }
+    if (recipientType === 'manual') {
+        if (phoneNumbers.length === 0) {
+            showAlert('broadcast-alert', 'Please add at least one phone number', 'error');
+            return;
+        }
+        data.phone_numbers = phoneNumbers;
+    } else {
+        data.group_name = document.getElementById('group-select').value;
+    }
+
+    if (type === 'tts') {
+        data.tts_text = document.getElementById('broadcast-tts').value;
+    } else {
+        data.recording_file = document.getElementById('broadcast-recording-select').value;
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/api/broadcast`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
         });
 
-        // Group Form
-    // Only set the initial create handler, editGroup will override it when needed
-                const groupForm = document.getElementById('group-form');
-                if (!groupForm.dataset.listenerSet) {
-                    groupForm.addEventListener('submit', createGroupSubmit);
-                    groupForm.dataset.listenerSet = 'true';
-                }
-        // Load functions
-    async function loadDashboard() {
-            try {
-                const [callsRes, broadcastsRes, groupsRes, recordingsRes] = await Promise.all([
-                    fetch(`${API_URL}/api/call_history?limit=10`),
-                    fetch(`${API_URL}/api/broadcasts`),
-                    fetch(`${API_URL}/api/groups`),
-                    fetch(`${API_URL}/api/recordings`)
-                ]);
-
-                const calls = await callsRes.json();
-                const broadcasts = await broadcastsRes.json();
-                const groups = await groupsRes.json();
-                const recordings = await recordingsRes.json();
-
-                document.getElementById('total-calls').textContent = calls.calls.length;
-                document.getElementById('active-broadcasts').textContent = 
-                    broadcasts.broadcasts.filter(b => b.status === 'processing').length;
-                document.getElementById('total-groups').textContent = groups.groups.length;
-                document.getElementById('total-recordings').textContent = recordings.recordings.length;
-
-                // Recent activity
-                const activity = document.getElementById('recent-activity');
-                activity.innerHTML = calls.calls.slice(0, 5).map(call => `
-                    <div class="call-history-item">
-                        <div class="call-info">
-                            <div class="call-number">${call.phone_number}</div>
-                            <div class="call-time">${new Date(call.started_at).toLocaleString()}</div>
-                        </div>
-                        <span class="status-badge status-${call.status}">${call.status}</span>
-                    </div>
-                `).join('') || '<p style="color: #666;">No recent activity</p>';
-                
-                // Load active calls
-                await loadActiveCalls();
-
-            } catch (error) {
-                console.error('Error loading dashboard:', error);
-            }
+        if (response.ok) {
+            const result = await response.json();
+            showAlert('broadcast-alert', `Broadcast started! ID: ${result.broadcast_id}`, 'success');
+            e.target.reset();
+            phoneNumbers = [];
+            updatePhoneList();
+            setTimeout(loadBroadcasts, 1000);
+        } else {
+            showAlert('broadcast-alert', 'Failed to create broadcast', 'error');
         }
+    } catch (error) {
+        showAlert('broadcast-alert', `Error: ${error.message}`, 'error');
+    }
+});
 
-        async function loadBroadcasts() {
-            const list = document.getElementById('broadcasts-list');
-            list.innerHTML = '<div class="loading"><div class="spinner"></div>Loading broadcasts...</div>';
+// Group Form
+const groupForm = document.getElementById('group-form');
+if (!groupForm.dataset.listenerSet) {
+    groupForm.addEventListener('submit', createGroupSubmit);
+    groupForm.dataset.listenerSet = 'true';
+}
 
-            try {
-                const response = await fetch(`${API_URL}/api/broadcasts`);
-                const data = await response.json();
-                
-                if (data.broadcasts.length === 0) {
-                    list.innerHTML = '<p style="color: #666; text-align: center;">No broadcasts yet</p>';
-                    return;
-                }
+async function loadDashboard() {
+    try {
+        const [callsRes, broadcastsRes, groupsRes, recordingsRes] = await Promise.all([
+            fetch(`${API_URL}/api/call_history?limit=10`),
+            fetch(`${API_URL}/api/broadcasts`),
+            fetch(`${API_URL}/api/groups`),
+            fetch(`${API_URL}/api/recordings`)
+        ]);
 
-                list.innerHTML = data.broadcasts.map(b => `
-                    <div class="broadcast-card">
-                        <div style="display: flex; justify-content: space-between; align-items: start;">
-                            <div>
-                                <h3>${b.name}</h3>
-                                <span class="status-badge status-${b.status}">${b.status}</span>
-                            </div>
-                            <small style="color: #666;">${new Date(b.created_at).toLocaleString()}</small>
-                        </div>
-                        <div class="broadcast-stats">
-                            <div class="stat">
-                                <div class="stat-number">${b.total_numbers}</div>
-                                <div class="stat-label">Total</div>
-                            </div>
-                            <div class="stat">
-                                <div class="stat-number">${b.completed}</div>
-                                <div class="stat-label">Completed</div>
-                            </div>
-                            <div class="stat">
-                                <div class="stat-number">${b.in_progress}</div>
-                                <div class="stat-label">In Progress</div>
-                            </div>
-                            <div class="stat">
-                                <div class="stat-number">${b.failed}</div>
-                                <div class="stat-label">Failed</div>
-                            </div>
-                        </div>
-                    </div>
-                `).join('');
-            } catch (error) {
-                list.innerHTML = `<p style="color: #dc3545;">Error: ${error.message}</p>`;
-            }
-        }
+        const calls = await callsRes.json();
+        const broadcasts = await broadcastsRes.json();
+        const groups = await groupsRes.json();
+        const recordings = await recordingsRes.json();
 
-        async function loadGroups() {
-            const list = document.getElementById('groups-list');
-            const select = document.getElementById('group-select');
-            list.innerHTML = '<div class="loading"><div class="spinner"></div>Loading groups...</div>';
+        document.getElementById('total-calls').textContent = calls.calls.length;
+        document.getElementById('active-broadcasts').textContent = 
+            broadcasts.broadcasts.filter(b => b.status === 'processing').length;
+        document.getElementById('total-groups').textContent = groups.groups.length;
+        document.getElementById('total-recordings').textContent = recordings.recordings.length;
 
-            try {
-                const response = await fetch(`${API_URL}/api/groups`);
-                const data = await response.json();
-                
-                if (data.groups.length === 0) {
-                    list.innerHTML = '<p style="color: #666; text-align: center;">No groups yet</p>';
-                    select.innerHTML = '<option value="">No groups available</option>';
-                    return;
-                }
-
-               // Update groups list
-list.innerHTML = data.groups.map(g => `
-    <div class="group-card">
-        <div style="display: flex; justify-content: space-between; align-items: start;">
-            <div>
-                <h3>${g.name}</h3>
-                <div class="member-count">${g.member_count} members</div>
-                ${g.caller_id ? `<div style="color: #666; font-size: 14px; margin-top: 5px;">Caller ID: ${g.caller_id}</div>` : ''}
+        const activity = document.getElementById('recent-activity');
+        activity.innerHTML = calls.calls.slice(0, 5).map(call => `
+            <div class="call-history-item">
+                <div class="call-info">
+                    <div class="call-number">${call.phone_number}</div>
+                    <div class="call-time">${new Date(call.started_at).toLocaleString()}</div>
+                </div>
+                <span class="status-badge status-${call.status}">${call.status}</span>
             </div>
-            <div style="display: flex; gap: 10px;">
-                <button class="btn btn-secondary btn-small" onclick="editGroup('${g.name}')">Edit</button>
-                <button class="btn btn-danger btn-small" onclick="deleteGroup('${g.name}')">Delete</button>
-            </div>
-        </div>
-    </div>
-`).join('');
-
-// Update group select dropdown
-select.innerHTML = data.groups.map(g => 
-    `<option value="${g.name}">${g.name} (${g.member_count} members)</option>`
-).join('');
-            } catch (error) {
-                list.innerHTML = `<p style="color: #dc3545;">Error: ${error.message}</p>`;
-            }
-        }
-
-        async function loadCallHistory() {
-            const list = document.getElementById('history-list');
-            list.innerHTML = '<div class="loading"><div class="spinner"></div>Loading call history...</div>';
-
-            try {
-                const response = await fetch(`${API_URL}/api/call_history?limit=50`);
-                const data = await response.json();
-                
-                if (data.calls.length === 0) {
-                    list.innerHTML = '<p style="color: #666; text-align: center;">No calls yet</p>';
-                    return;
-                }
-
-                list.innerHTML = data.calls.map(call => `
-                    <div class="call-history-item">
-                        <div class="call-info">
-                            <div class="call-number">${call.phone_number}</div>
-                            <div class="call-time">
-                                ${new Date(call.started_at).toLocaleString()}
-                                ${call.duration ? ` • ${Math.round(call.duration)}s` : ''}
-                                ${call.group_name ? ` • Group: ${call.group_name}` : ''}
-                            </div>
-                        </div>
-                        <span class="status-badge status-${call.status}">${call.status}</span>
-                    </div>
-                `).join('');
-            } catch (error) {
-                list.innerHTML = `<p style="color: #dc3545;">Error: ${error.message}</p>`;
-            }
-        }
-
-        // Load dashboard on page load
-        loadDashboard();
+        `).join('') || '<p style="color: #666;">No recent activity</p>';
         
-        // Auto-refresh dashboard every 10 seconds
+        await loadActiveCalls();
+
+    } catch (error) {
+        console.error('Error loading dashboard:', error);
+    }
+}
+
+async function loadBroadcasts() {
+    const list = document.getElementById('broadcasts-list');
+    list.innerHTML = '<div class="loading"><div class="spinner"></div>Loading broadcasts...</div>';
+
+    try {
+        const response = await fetch(`${API_URL}/api/broadcasts`);
+        const data = await response.json();
+        
+        if (data.broadcasts.length === 0) {
+            list.innerHTML = '<p style="color: #666; text-align: center;">No broadcasts yet</p>';
+            return;
+        }
+
+        list.innerHTML = data.broadcasts.map(b => `
+            <div class="broadcast-card">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <div>
+                        <h3>${b.name}</h3>
+                        <span class="status-badge status-${b.status}">${b.status}</span>
+                    </div>
+                    <small style="color: #666;">${new Date(b.created_at).toLocaleString()}</small>
+                </div>
+                <div class="broadcast-stats">
+                    <div class="stat">
+                        <div class="stat-number">${b.total_numbers}</div>
+                        <div class="stat-label">Total</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">${b.completed}</div>
+                        <div class="stat-label">Completed</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">${b.in_progress}</div>
+                        <div class="stat-label">In Progress</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">${b.failed}</div>
+                        <div class="stat-label">Failed</div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        list.innerHTML = `<p style="color: #dc3545;">Error: ${error.message}</p>`;
+    }
+}
+
+async function loadGroups() {
+    const list = document.getElementById('groups-list');
+    const select = document.getElementById('group-select');
+    list.innerHTML = '<div class="loading"><div class="spinner"></div>Loading groups...</div>';
+
+    try {
+        const response = await fetch(`${API_URL}/api/groups`);
+        const data = await response.json();
+        
+        if (data.groups.length === 0) {
+            list.innerHTML = '<p style="color: #666; text-align: center;">No groups yet</p>';
+            select.innerHTML = '<option value="">No groups available</option>';
+            return;
+        }
+
+        list.innerHTML = data.groups.map(g => `
+            <div class="group-card">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <div>
+                        <h3>${g.name}</h3>
+                        <div class="member-count">${g.member_count} members</div>
+                        ${g.caller_id ? `<div style="color: #666; font-size: 14px; margin-top: 5px;">Caller ID: ${g.caller_id}</div>` : ''}
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-secondary btn-small" onclick="editGroup('${g.name}')">Edit</button>
+                        <button class="btn btn-danger btn-small" onclick="deleteGroup('${g.name}')">Delete</button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+
+        select.innerHTML = data.groups.map(g => 
+            `<option value="${g.name}">${g.name} (${g.member_count} members)</option>`
+        ).join('');
+    } catch (error) {
+        list.innerHTML = `<p style="color: #dc3545;">Error: ${error.message}</p>`;
+    }
+}
+
+loadDashboard();
+
 setInterval(() => {
     const activeTab = document.querySelector('.tab.active').textContent.toLowerCase().replace(' ', '-');
     if (activeTab === 'dashboard') loadDashboard();
@@ -1405,7 +1366,6 @@ setInterval(() => {
     if (activeTab === 'recordings') loadRecordings();
 }, 10000);
 
-// Refresh active calls more frequently (every 2 seconds)
 setInterval(() => {
     const activeTab = document.querySelector('.tab.active').textContent.toLowerCase();
     if (activeTab === 'dashboard') {
@@ -1413,10 +1373,6 @@ setInterval(() => {
     }
 }, 2000);
 
-// Group Form - Remove the addEventListener, we'll handle it in the functions
-// document.getElementById('group-form').addEventListener('submit', createGroupSubmit);
-
-// Create group (separated function)
 async function createGroupSubmit(e) {
     e.preventDefault();
     
@@ -1453,24 +1409,19 @@ async function createGroupSubmit(e) {
     }
 }
 
-// Edit group
 async function editGroup(groupName) {
     try {
         const response = await fetch(`${API_URL}/api/groups/${encodeURIComponent(groupName)}`);
         const group = await response.json();
         
-        // Populate form
         document.getElementById('group-name').value = group.name;
         document.getElementById('group-caller-id').value = group.caller_id || '';
         
-        // Populate contacts
         groupContacts = group.contacts || [];
         updateGroupContactsList();
         
-        // Change button text
         document.getElementById('group-submit-btn').textContent = 'Save Changes';
         
-        // Remove old listener and add new one for update
         const form = document.getElementById('group-form');
         const newForm = form.cloneNode(true);
         form.parentNode.replaceChild(newForm, form);
@@ -1480,7 +1431,6 @@ async function editGroup(groupName) {
             await updateGroupSubmit(groupName);
         };
         
-        // Scroll to form
         document.getElementById('groups-tab').scrollIntoView({ behavior: 'smooth' });
         
     } catch (error) {
@@ -1488,7 +1438,6 @@ async function editGroup(groupName) {
     }
 }
 
-// Update group
 async function updateGroupSubmit(oldName) {
     if (groupContacts.length === 0) {
         showAlert('group-alert', 'Please add at least one contact', 'error');
@@ -1511,7 +1460,6 @@ async function updateGroupSubmit(oldName) {
         if (response.ok) {
             showAlert('group-alert', 'Group updated successfully!', 'success');
             
-            // Reset form to create mode
             const form = document.getElementById('group-form');
             const newForm = form.cloneNode(true);
             form.parentNode.replaceChild(newForm, form);
@@ -1522,7 +1470,6 @@ async function updateGroupSubmit(oldName) {
             groupContacts = [];
             updateGroupContactsList();
             
-            // Reset button text
             document.getElementById('group-submit-btn').textContent = 'Create Group';
             
             setTimeout(loadGroups, 1000);
@@ -1535,7 +1482,6 @@ async function updateGroupSubmit(oldName) {
     }
 }
 
-// Delete group
 async function deleteGroup(groupName) {
     if (!confirm(`Are you sure you want to delete the group "${groupName}"?`)) return;
     
@@ -1555,58 +1501,33 @@ async function deleteGroup(groupName) {
     }
 }
 
-// Initialize form with create mode
 document.getElementById('group-form').onsubmit = createGroupSubmit;
 
-
-            
-// Hangup active call
 async function hangupCall(callId) {
-    console.log('=== HANGUP DEBUG START ===');
-    console.log('Call ID received:', callId);
-    console.log('Call ID type:', typeof callId);
-    console.log('Call ID length:', callId ? callId.length : 'null');
-    
     if (!callId || callId === 'undefined') {
-        console.error('Invalid call_id provided to hangupCall');
         alert('Error: Invalid call ID');
         return;
     }
     
     if (!confirm('Are you sure you want to hangup this call?')) {
-        console.log('User cancelled hangup');
         return;
     }
     
-    console.log('Proceeding with hangup...');
-    
     try {
-        const url = `${API_URL}/api/calls/${callId}/hangup`;
-        console.log('Request URL:', url);
-        
-        const response = await fetch(url, {
+        const response = await fetch(`${API_URL}/api/calls/${callId}/hangup`, {
             method: 'POST'
         });
 
-        console.log('Response status:', response.status);
         const result = await response.json();
-        console.log('Response body:', result);
         
         if (response.ok) {
-            console.log('Hangup request successful');
             setTimeout(loadActiveCalls, 500);
-        } else {
-            console.error('Hangup failed:', result.message);
         }
     } catch (error) {
         console.error('Hangup exception:', error);
     }
-    
-    console.log('=== HANGUP DEBUG END ===');
-
 }
 
-// Load call records from CDR
 async function loadCallRecords() {
     try {
         const response = await fetch('/api/call_records?limit=50');
@@ -1625,9 +1546,9 @@ async function loadCallRecords() {
             return;
         }
         
-        // Populate extension filter
         const extensions = [...new Set(records.filter(r => r.extension).map(r => r.extension))];
         const extFilter = document.getElementById('filter-extension');
+        extFilter.innerHTML = '<option value="">All Extensions</option>';
         extensions.forEach(ext => {
             const option = document.createElement('option');
             option.value = ext;
@@ -1657,6 +1578,8 @@ function displayCallRecords(records) {
         const directionIcon = getDirectionIcon(record.direction);
         const typeColor = getCallTypeColor(record.call_type);
         const statusColor = getStatusColor(record.disposition);
+        
+        const recordJson = JSON.stringify(record).replace(/"/g, '&quot;');
         
         return `
             <tr style="border-bottom: 1px solid #dee2e6; transition: background 0.2s;" 
@@ -1693,7 +1616,7 @@ function displayCallRecords(records) {
                     </span>
                 </td>
                 <td style="padding: 12px;">
-                    <button onclick='showCallDetails(${JSON.stringify(record)})' 
+                    <button onclick='showCallDetails(${recordJson})' 
                             style="background: #667eea; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">
                         View
                     </button>
@@ -1825,7 +1748,6 @@ function applyCallFilters() {
     fetch(url)
         .then(r => r.json())
         .then(records => {
-            // Apply client-side filters for extension and disposition
             let filtered = records;
             if (extFilter) filtered = filtered.filter(r => r.extension === extFilter);
             if (dispFilter) filtered = filtered.filter(r => r.disposition === dispFilter);
@@ -1833,17 +1755,7 @@ function applyCallFilters() {
         });
 }
 
-// Auto-refresh call records every 10 seconds if on Call History tab
 setInterval(() => {
-    if (document.getElementById('history-tab').classList.contains('active')) {
-        loadCallRecords();
-    }
-}, 10000);
-    
- 
-    
-    // Auto-refresh every 10 seconds if on Call History tab
-    setInterval(() => {
     if (document.getElementById('history-tab').classList.contains('active')) {
         loadCallRecords();
     }
