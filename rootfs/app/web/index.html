@@ -476,12 +476,6 @@
             const response = await fetch('/api/call_records?limit=50');
             const records = await response.json();
             
-            // Debug: Let's see what we're getting
-            console.log('CDR Records:', records);
-            if (records && records.length > 0) {
-                console.log('First record:', records[0]);
-            }
-            
             const tableBody = document.getElementById('call-records-table');
             
             if (!records || records.length === 0) {
@@ -496,21 +490,25 @@
             }
             
             tableBody.innerHTML = records.map(record => {
-                // Try to parse the calldate field (this is the correct field in Asterisk CDR)
-                const dateField = record.calldate || record.start_time || record.start;
+                // Use created_at for timestamp
                 let dateStr = 'Unknown Time';
-                
-                if (dateField) {
-                    const date = new Date(dateField);
+                if (record.created_at) {
+                    const date = new Date(record.created_at);
                     if (date.toString() !== 'Invalid Date') {
                         dateStr = `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
                     } else {
-                        dateStr = dateField; // Show raw value if can't parse
+                        dateStr = record.created_at;
                     }
                 }
                 
-                // Get disposition status
-                const disposition = record.disposition || record.status || 'Unknown';
+                // Map disposition codes to text
+                const dispositionMap = {
+                    '1': 'NO ANSWER',
+                    '2': 'ANSWERED', 
+                    '3': 'BUSY',
+                    '4': 'FAILED'
+                };
+                const disposition = dispositionMap[record.disposition] || record.disposition || 'Unknown';
                 
                 // Color code the status
                 const statusColors = {
@@ -524,8 +522,8 @@
                 return `
                     <tr style="border-bottom: 1px solid #dee2e6;">
                         <td style="padding: 12px;">${dateStr}</td>
-                        <td style="padding: 12px;">${record.source_number || record.src || 'Unknown'}</td>
-                        <td style="padding: 12px;">${record.destination_number || record.dst || 'Unknown'}</td>
+                        <td style="padding: 12px;">${record.source_number || 'Unknown'}</td>
+                        <td style="padding: 12px;">${record.destination_number || 'Unknown'}</td>
                         <td style="padding: 12px;">${record.duration || 0}s</td>
                         <td style="padding: 12px;">
                             <span style="background: ${statusColor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
