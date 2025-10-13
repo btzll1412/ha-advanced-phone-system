@@ -3,7 +3,6 @@ version: "1.1.0"
 slug: "advanced_phone_system"
 description: "Professional VoIP phone system with automation and broadcast capabilities"
 url: "https://github.com/btzll1412/ha-advanced-phone-system"
-webui: "http://[HOST]:8088"
 arch:
   - armhf
   - armv7
