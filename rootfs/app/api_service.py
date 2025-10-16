@@ -256,18 +256,23 @@ async def process_cdr_record(row):
         if context == "outbound-playback":
             call_type = "outbound"
             direction = "outbound"
-            # Extract actual destination from lastdata or channel
-            # For outbound calls, source is usually the number being called
+            # For outbound-playback, source is the number being called
             if source and source != "s":
-                dest = source  # The real destination
-                source = "System"  # Or extension number if available
+                actual_dest = source
+                source = "System"
+                dest = actual_dest
         elif context == "internal":
+            # Check if destination is an internal extension (3 digits starting with 1)
             if dest.startswith("1") and len(dest) == 3:
                 call_type = "internal"
                 direction = "internal"
             elif dest == "999":
                 call_type = "recording_system"
                 direction = "internal"
+            # If destination is an external number (10+ digits), it's an outbound call
+            elif len(dest) >= 10:
+                call_type = "outbound"
+                direction = "outbound"
             else:
                 call_type = "outbound"
                 direction = "outbound"
@@ -327,7 +332,6 @@ async def process_cdr_record(row):
     except Exception as e:
         logger.error(f"Error processing CDR: {e}")
         logger.error(f"Row data: {row}")
-
 
 def migrate_database():
     """Migrate database to add contact names"""
