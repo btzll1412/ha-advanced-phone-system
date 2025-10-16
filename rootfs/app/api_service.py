@@ -821,58 +821,7 @@ async def create_broadcast(request: BroadcastRequest, background_tasks: Backgrou
         logger.error(f"Error creating broadcast: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/call_status")
-async def update_call_status(call_id: str, status: str):
-    """Update call status from Asterisk"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        if status == "completed":
-            cursor.execute('''
-                UPDATE call_history 
-                SET status = ?, ended_at = CURRENT_TIMESTAMP,
-                    duration = (julianday(CURRENT_TIMESTAMP) - julianday(started_at)) * 86400
-                WHERE call_id = ?
-            ''', (status, call_id))
-            
-            # Update broadcast stats
-            cursor.execute('SELECT broadcast_id FROM call_history WHERE call_id = ?', (call_id,))
-            row = cursor.fetchone()
-            if row and row[0]:
-                broadcast_id = row[0]
-                cursor.execute('''
-                    UPDATE broadcasts 
-                    SET completed = completed + 1, in_progress = in_progress - 1
-                    WHERE broadcast_id = ?
-                ''', (broadcast_id,))
-        
-        elif status == "hangup" or status == "failed":
-            cursor.execute('''
-                UPDATE call_history 
-                SET status = ?, ended_at = CURRENT_TIMESTAMP
-                WHERE call_id = ?
-            ''', (status, call_id))
-            
-            # Update broadcast stats
-            cursor.execute('SELECT broadcast_id FROM call_history WHERE call_id = ?', (call_id,))
-            row = cursor.fetchone()
-            if row and row[0]:
-                broadcast_id = row[0]
-                cursor.execute('''
-                    UPDATE broadcasts 
-                    SET failed = failed + 1, in_progress = in_progress - 1
-                    WHERE broadcast_id = ?
-                ''', (broadcast_id,))
-        
-        conn.commit()
-        conn.close()
-        
-        return {"status": "ok"}
-        
-    except Exception as e:
-        logger.error(f"Error updating call status: {e}")
-        return {"status": "error", "message": str(e)}
+
 
 
 @app.post("/api/call_status")
