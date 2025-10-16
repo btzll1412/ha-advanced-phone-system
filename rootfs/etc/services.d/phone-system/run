@@ -215,7 +215,7 @@ chown -R asterisk:asterisk /var/lib/asterisk/sounds/custom_prompts
 
 cat >> /etc/asterisk/extensions.conf << 'EOF_OUTBOUND'
 [outbound-playback]
-; Context for automated outbound calls with AMD
+; Context for automated outbound calls (Duration-based detection)
 exten => s,1,NoOp(=== Outbound Call Started ===)
     same => n,NoOp(Phone: ${PHONE_NUMBER})
     same => n,NoOp(Audio: ${AUDIO_FILE})
@@ -225,47 +225,16 @@ exten => s,1,NoOp(=== Outbound Call Started ===)
     same => n,SIPAddHeader(From: <sip:${CUSTOM_CALLERID}@${SIPDOMAIN}>)
     same => n,System(curl -X POST "http://localhost:8088/api/call_status/ringing?call_id=${CALL_ID}" 2>/dev/null)
     same => n,Answer()
+    same => n,Wait(0.5)
     same => n,System(curl -X POST "http://localhost:8088/api/call_status/answered?call_id=${CALL_ID}" 2>/dev/null)
-    ; ============================================
-    ; 🎯 AMD - ANSWERING MACHINE DETECTION
-    ; ============================================
-    same => n,AMD(2000,2000,1000,5000,120,50,5,256)
-    same => n,NoOp(AMD Result: ${AMDSTATUS} - ${AMDCAUSE})
-    same => n,Set(CDR(userfield)=AMD:${AMDSTATUS}:${AMDCAUSE})
-    same => n,GotoIf($["${AMDSTATUS}" = "MACHINE"]?voicemail)
-    same => n,GotoIf($["${AMDSTATUS}" = "HUMAN"]?human)
-    same => n,Goto(unknown)
-    ; Real person answered
-    same => n(human),NoOp(=== HUMAN DETECTED ===)
-    same => n,Set(IS_VOICEMAIL=0)
-    same => n,System(curl -X POST "http://localhost:8088/api/call_status?call_id=${CALL_ID}&status=human_answered" 2>/dev/null)
     same => n,Wait(${PRE_MESSAGE_DELAY})
     same => n,Playback(custom/${AUDIO_FILE})
     same => n,Wait(2)
-    same => n,Goto(end)
-    ; Voicemail detected
-    same => n(voicemail),NoOp(=== VOICEMAIL DETECTED ===)
-    same => n,Set(IS_VOICEMAIL=1)
-    same => n,System(curl -X POST "http://localhost:8088/api/call_status?call_id=${CALL_ID}&status=voicemail" 2>/dev/null)
-    same => n,Wait(1)
-    same => n,WaitForSilence(500,3)
-    same => n,Playback(custom/${AUDIO_FILE})
-    same => n,Wait(2)
-    same => n,Goto(end)
-    ; Couldn't determine
-    same => n(unknown),NoOp(=== AMD UNCERTAIN ===)
-    same => n,Set(IS_VOICEMAIL=2)
-    same => n,System(curl -X POST "http://localhost:8088/api/call_status?call_id=${CALL_ID}&status=uncertain" 2>/dev/null)
-    same => n,Wait(${PRE_MESSAGE_DELAY})
-    same => n,Playback(custom/${AUDIO_FILE})
-    same => n,Wait(2)
-    same => n,Goto(end)
-    ; End call
-    same => n(end),System(curl -X POST "http://localhost:8088/api/call_status?call_id=${CALL_ID}&status=completed&is_voicemail=${IS_VOICEMAIL}" 2>/dev/null)
+    same => n,System(curl -X POST "http://localhost:8088/api/call_status?call_id=${CALL_ID}&status=completed" 2>/dev/null)
     same => n,Hangup()
 
 exten => h,1,NoOp(=== Call Ended ===)
-    same => n,System(curl -X POST "http://localhost:8088/api/call_status?call_id=${CALL_ID}&status=hangup&is_voicemail=${IS_VOICEMAIL}" 2>/dev/null)
+    same => n,System(curl -X POST "http://localhost:8088/api/call_status?call_id=${CALL_ID}&status=hangup" 2>/dev/null)
 EOF_OUTBOUND
 
 
