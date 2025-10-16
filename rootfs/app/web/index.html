@@ -1611,55 +1611,52 @@
         }
 
         function displayCallRecords(records) {
-            const tableBody = document.getElementById('call-records-table');
-            
-            tableBody.innerHTML = records.map(record => {
-                const date = new Date(record.created_at);
-                const dateStr = date.toString() !== 'Invalid Date' 
-                    ? date.toLocaleString()
-                    : record.created_at;
-                
-                // IMPROVED: Better answered vs voicemail detection
-                const billsec = parseInt(record.billsec) || 0;
-                const duration = parseInt(record.duration) || 0;
-                const disposition = record.disposition || '';
-                const lastapp = record.lastapp || '';
-                
-                let status = 'UNKNOWN';
-                let statusColor = '#718096';
-                
-                // Check if call went to voicemail system
-                const isVoicemail = lastapp.toLowerCase().includes('voicemail') || 
-                                  record.destination_channel?.includes('voicemail') ||
-                                  record.context?.includes('voicemail');
-                
-                // Determine actual status with improved logic
-                if (isVoicemail) {
-                    // Definitely went to voicemail
-                    status = 'VOICEMAIL';
-                    statusColor = '#ed8936';
-                } else if (disposition === 'NO ANSWER') {
-                    status = 'NO ANSWER';
-                    statusColor = '#f56565';
-                } else if (disposition === 'BUSY') {
-                    status = 'BUSY';
-                    statusColor = '#f56565';
-                } else if (disposition === 'FAILED') {
-                    status = 'FAILED';
-                    statusColor = '#f56565';
-                } else if (billsec >= 3) {
-                    // If talk time is 3+ seconds and didn't go to voicemail, person answered
-                    status = 'ANSWERED';
-                    statusColor = '#48bb78';
-                } else if (billsec > 0 && billsec < 3) {
-                    // Quick hangup/decline
-                    status = 'DECLINED';
-                    statusColor = '#ed8936';
-                } else if (duration > 0) {
-                    // Rang but no talk time
-                    status = 'NO ANSWER';
-                    statusColor = '#f56565';
-                }
+    const tableBody = document.getElementById('call-records-table');
+    
+    tableBody.innerHTML = records.map(record => {
+        const date = new Date(record.created_at);
+        const dateStr = date.toString() !== 'Invalid Date' 
+            ? date.toLocaleString()
+            : record.created_at;
+        
+        const billsec = parseInt(record.billsec) || 0;
+        const duration = parseInt(record.duration) || 0;
+        
+        // 🎯 NEW: Check is_voicemail from call_history table
+        let status = 'UNKNOWN';
+        let statusColor = '#718096';
+        let statusEmoji = '❓';
+        
+        if (record.is_voicemail === 1) {
+            status = 'VOICEMAIL';
+            statusColor = '#ff6b6b';
+            statusEmoji = '📧';
+        } else if (record.is_voicemail === 0) {
+            status = 'ANSWERED';
+            statusColor = '#48bb78';
+            statusEmoji = '✅';
+        } else if (record.is_voicemail === 2) {
+            status = 'UNCERTAIN';
+            statusColor = '#ffc107';
+            statusEmoji = '❓';
+        } else {
+            // Fallback to old logic if is_voicemail not set
+            if (billsec >= 3) {
+                status = 'ANSWERED';
+                statusColor = '#48bb78';
+                statusEmoji = '✅';
+            } else if (billsec > 0) {
+                status = 'BRIEF';
+                statusColor = '#ed8936';
+                statusEmoji = '⚠️';
+            } else {
+                status = 'NO ANSWER';
+                statusColor = '#f56565';
+                statusEmoji = '❌';
+            }
+        }
+        
+        // ... rest of the function stays the same
                 
                 const directionIcon = getDirectionIcon(record.direction);
                 const typeColor = getCallTypeColor(record.call_type || 'outbound');
