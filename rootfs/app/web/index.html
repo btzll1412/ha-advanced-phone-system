@@ -1622,33 +1622,37 @@
         const billsec = parseInt(record.billsec) || 0;
         const duration = parseInt(record.duration) || 0;
         
-        // 🎯 NEW: Check is_voicemail from call_history table
+        // Duration-based detection
         let status = 'UNKNOWN';
         let statusColor = '#718096';
         let statusEmoji = '❓';
         
-        if (record.is_voicemail === 1) {
+        if (record.is_voicemail === 0) {
+            status = 'HUMAN ANSWERED';
+            statusColor = '#48bb78';
+            statusEmoji = '✅';
+        } else if (record.is_voicemail === 1) {
             status = 'VOICEMAIL';
             statusColor = '#ff6b6b';
             statusEmoji = '📧';
-        } else if (record.is_voicemail === 0) {
-            status = 'ANSWERED';
-            statusColor = '#48bb78';
-            statusEmoji = '✅';
         } else if (record.is_voicemail === 2) {
             status = 'UNCERTAIN';
             statusColor = '#ffc107';
             statusEmoji = '❓';
         } else {
-            // Fallback to old logic if is_voicemail not set
+            // Fallback to billsec logic if is_voicemail not set
             if (billsec >= 3) {
-                status = 'ANSWERED';
+                status = 'HUMAN ANSWERED';
                 statusColor = '#48bb78';
                 statusEmoji = '✅';
             } else if (billsec > 0) {
-                status = 'BRIEF';
+                status = 'QUICK HANGUP';
                 statusColor = '#ed8936';
                 statusEmoji = '⚠️';
+            } else if (duration > 0) {
+                status = 'VOICEMAIL';
+                statusColor = '#f56565';
+                statusEmoji = '📧';
             } else {
                 status = 'NO ANSWER';
                 statusColor = '#f56565';
@@ -1656,58 +1660,54 @@
             }
         }
         
-        // ... rest of the function stays the same
-                
-                const directionIcon = getDirectionIcon(record.direction);
-                const typeColor = getCallTypeColor(record.call_type || 'outbound');
-                
-                const recordJson = JSON.stringify(record).replace(/"/g, '&quot;');
-                
-                return `
-                    <tr style="border-bottom: 1px solid #dee2e6; transition: background 0.2s;" 
-                        onmouseover="this.style.background='#f8f9fa'" 
-                        onmouseout="this.style.background='white'">
-                        <td style="padding: 12px;">
-                            <div style="font-weight: 500;">${dateStr}</div>
-                        </td>
-                        <td style="padding: 12px;">
-                            <span style="font-size: 20px;">${directionIcon}</span>
-                        </td>
-                        <td style="padding: 12px;">
-                            <div style="font-weight: 500;">${record.source_number || 'Unknown'}</div>
-                            ${record.caller_id ? `<div style="font-size: 12px; color: #6c757d;">${record.caller_id}</div>` : ''}
-                        </td>
-                        <td style="padding: 12px; font-weight: 500;">
-                            ${record.destination_number || 'Unknown'}
-                        </td>
-                        <td style="padding: 12px;">
-                            ${record.extension ? `<span style="background: #e3f2fd; color: #1976d2; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;">Ext ${record.extension}</span>` : '-'}
-                        </td>
-                        <td style="padding: 12px;">
-                            <span style="background: ${typeColor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;">
-                                ${formatCallType(record.call_type || 'outbound')}
-                            </span>
-                        </td>
-                        <td style="padding: 12px;">
-                            <div style="font-weight: 600; font-size: 16px;">${billsec}s</div>
-                            <div style="font-size: 11px; color: #6c757d;">(${duration}s total)</div>
-                        </td>
-                        <td style="padding: 12px;">
-                            <span style="background: ${statusColor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;">
-                                ${status}
-                            </span>
-                        </td>
-                        <td style="padding: 12px;">
-                            <button onclick='showCallDetails(${recordJson})' 
-                                    style="background: #667eea; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">
-                                View
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-        }
-
+        const directionIcon = getDirectionIcon(record.direction);
+        const typeColor = getCallTypeColor(record.call_type || 'outbound');
+        const recordJson = JSON.stringify(record).replace(/"/g, '&quot;');
+        
+        return `
+            <tr style="border-bottom: 1px solid #dee2e6; transition: background 0.2s;" 
+                onmouseover="this.style.background='#f8f9fa'" 
+                onmouseout="this.style.background='white'">
+                <td style="padding: 12px;">
+                    <div style="font-weight: 500;">${dateStr}</div>
+                </td>
+                <td style="padding: 12px;">
+                    <span style="font-size: 20px;">${directionIcon}</span>
+                </td>
+                <td style="padding: 12px;">
+                    <div style="font-weight: 500;">${record.source_number || 'Unknown'}</div>
+                    ${record.caller_id ? `<div style="font-size: 12px; color: #6c757d;">${record.caller_id}</div>` : ''}
+                </td>
+                <td style="padding: 12px; font-weight: 500;">
+                    ${record.destination_number || 'Unknown'}
+                </td>
+                <td style="padding: 12px;">
+                    ${record.extension ? `<span style="background: #e3f2fd; color: #1976d2; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;">Ext ${record.extension}</span>` : '-'}
+                </td>
+                <td style="padding: 12px;">
+                    <span style="background: ${typeColor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;">
+                        ${formatCallType(record.call_type || 'outbound')}
+                    </span>
+                </td>
+                <td style="padding: 12px;">
+                    <div style="font-weight: 600; font-size: 16px;">${billsec}s</div>
+                    <div style="font-size: 11px; color: #6c757d;">(${duration}s total)</div>
+                </td>
+                <td style="padding: 12px;">
+                    <span style="background: ${statusColor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;">
+                        ${statusEmoji} ${status}
+                    </span>
+                </td>
+                <td style="padding: 12px;">
+                    <button onclick='showCallDetails(${recordJson})' 
+                            style="background: #667eea; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                        View
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
         function getDirectionIcon(direction) {
             const icons = {
                 'outbound': '📞',
