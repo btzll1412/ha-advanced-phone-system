@@ -273,7 +273,6 @@ EOF_OUTBOUND
 ```
 AMD(initialSilence, greeting, afterGreetingSilence, totalAnalysisTime, minimumWordLength, betweenWordsSilence, maximumNumberOfWords, silenceThreshold)
 
-AMD(2000,2000,1000,5000,120,50,5,256)
 
 ; ============================================
 ; Recording System with IVR Menu
