@@ -825,28 +825,62 @@ async def create_broadcast(request: BroadcastRequest, background_tasks: Backgrou
 
 
 @app.post("/api/call_status")
-async def update_call_status(call_id: str, status: str, is_voicemail: int = None):
-    """Update call status from Asterisk"""
+async def update_call_status(call_id: str, status: str):
+    """Update call status - uses duration-based voicemail detection"""
     try:
         conn = get_db()
         cursor = conn.cursor()
         
-        # NEW: Store voicemail detection result
-        if is_voicemail is not None:
+        if status == "completed":
+            # Get the call duration from CDR to determine if human answered
             cursor.execute('''
-                UPDATE call_history 
-                SET status = ?, is_voicemail = ?
-                WHERE call_id = ?
-            ''', (status, is_voicemail, call_id))
-        elif status == "completed":
-            cursor.execute('''
-                UPDATE call_history 
-                SET status = ?, ended_at = CURRENT_TIMESTAMP,
-                    duration = (julianday(CURRENT_TIMESTAMP) - julianday(started_at)) * 86400
-                WHERE call_id = ?
-            ''', (status, call_id))
+                SELECT billsec, duration FROM call_records 
+                WHERE uniqueid LIKE ? 
+                ORDER BY created_at DESC LIMIT 1
+            ''', (f'%{call_id}%',))
             
-            # Update broadcast stats
+            cdr_row = cursor.fetchone()
+            
+            if cdr_row:
+                billsec = int(cdr_row[0]) if cdr_row[0] else 0
+                duration = int(cdr_row[1]) if cdr_row[1] else 0
+                
+                # Duration-based detection logic
+                if billsec >= 3:
+                    # Human answered and stayed on call
+                    is_voicemail = 0
+                    status = "human_answered"
+                elif billsec > 0 and billsec < 3:
+                    # Quick hangup - likely declined or brief answer
+                    is_voicemail = 2
+                    status = "uncertain"
+                elif billsec == 0 and duration > 0:
+                    # No talk time but call connected - voicemail
+                    is_voicemail = 1
+                    status = "voicemail"
+                else:
+                    # Unknown
+                    is_voicemail = 2
+                    status = "uncertain"
+                
+                # Update call_history with detection result
+                cursor.execute('''
+                    UPDATE call_history 
+                    SET status = ?, is_voicemail = ?, 
+                        ended_at = CURRENT_TIMESTAMP,
+                        duration = ?
+                    WHERE call_id = ?
+                ''', (status, is_voicemail, duration, call_id))
+            else:
+                # No CDR found yet, just mark as completed
+                cursor.execute('''
+                    UPDATE call_history 
+                    SET status = ?, ended_at = CURRENT_TIMESTAMP,
+                        duration = (julianday(CURRENT_TIMESTAMP) - julianday(started_at)) * 86400
+                    WHERE call_id = ?
+                ''', (status, call_id))
+            
+            # Update broadcast stats if applicable
             cursor.execute('SELECT broadcast_id FROM call_history WHERE call_id = ?', (call_id,))
             row = cursor.fetchone()
             if row and row[0]:
@@ -857,7 +891,7 @@ async def update_call_status(call_id: str, status: str, is_voicemail: int = None
                     WHERE broadcast_id = ?
                 ''', (broadcast_id,))
         
-        elif status == "hangup" or status == "failed":
+        elif status in ("hangup", "failed"):
             cursor.execute('''
                 UPDATE call_history 
                 SET status = ?, ended_at = CURRENT_TIMESTAMP
@@ -883,7 +917,6 @@ async def update_call_status(call_id: str, status: str, is_voicemail: int = None
     except Exception as e:
         logger.error(f"Error updating call status: {e}")
         return {"status": "error", "message": str(e)}
-
 @app.post("/api/call_status/ringing")
 async def update_call_ringing(call_id: str):
     """Mark call as ringing"""
