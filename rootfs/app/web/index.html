@@ -1125,54 +1125,60 @@
         });
 
         async function loadActiveCalls() {
-            const list = document.getElementById('active-calls-list');
-            
-            try {
-                const response = await fetch(`${API_URL}/api/calls/active`);
-                const data = await response.json();
-                
-                if (data.active_calls.length === 0) {
-                    list.innerHTML = '<p style="color: #666;">No active calls</p>';
-                    return;
-                }
-
-                list.innerHTML = data.active_calls.map(call => {
-                    const statusColors = {
-                        'initiated': '#ffc107',
-                        'ringing': '#17a2b8',
-                        'answered': '#28a745'
-                    };
-                    
-                    const statusLabels = {
-                        'initiated': 'Dialing',
-                        'ringing': 'Ringing',
-                        'answered': 'In Progress'
-                    };
-                    
-                    return `
-                        <div class="call-history-item" style="background: linear-gradient(90deg, ${statusColors[call.status]}15 0%, transparent 100%);">
-                            <div class="call-info">
-                                <div class="call-number">
-                                    ${call.phone_number}
-                                    ${call.caller_id ? `<span style="color: #666; font-size: 14px; margin-left: 10px;">as ${call.caller_id}</span>` : ''}
-                                </div>
-                                <div class="call-time">
-                                    Duration: ${call.duration}s • Started: ${new Date(call.started_at).toLocaleTimeString()}
-                                </div>
-                            </div>
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <span class="status-badge" style="background: ${statusColors[call.status]}; color: white;">
-                                    ${statusLabels[call.status]}
-                                </span>
-                                <button class="btn btn-danger btn-small" onclick="hangupCall('${call.call_id}')">Hangup</button>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-            } catch (error) {
-                list.innerHTML = `<p style="color: #dc3545;">Error: ${error.message}</p>`;
-            }
+    const list = document.getElementById('active-calls-list');
+    
+    try {
+        const response = await fetch(`${API_URL}/api/calls/active`);
+        const data = await response.json();
+        
+        if (data.active_calls.length === 0) {
+            list.innerHTML = '<p style="color: #666;">No active calls</p>';
+            return;
         }
+
+        list.innerHTML = data.active_calls.map(call => {
+            const statusColors = {
+                'initiated': '#ffc107',
+                'ringing': '#17a2b8',
+                'answered': '#28a745',
+                'human_answered': '#28a745',  // ← ADD
+                'voicemail': '#ff6b6b',       // ← ADD
+                'uncertain': '#ffc107'        // ← ADD
+            };
+            
+            const statusLabels = {
+                'initiated': 'Dialing',
+                'ringing': 'Ringing',
+                'answered': 'In Progress',
+                'human_answered': '✅ Human',      // ← ADD
+                'voicemail': '📧 Voicemail',       // ← ADD
+                'uncertain': '❓ Uncertain'        // ← ADD
+            };
+            
+            return `
+                <div class="call-history-item" style="background: linear-gradient(90deg, ${statusColors[call.status]}15 0%, transparent 100%);">
+                    <div class="call-info">
+                        <div class="call-number">
+                            ${call.phone_number}
+                            ${call.caller_id ? `<span style="color: #666; font-size: 14px; margin-left: 10px;">as ${call.caller_id}</span>` : ''}
+                        </div>
+                        <div class="call-time">
+                            Duration: ${call.duration}s • Started: ${new Date(call.started_at).toLocaleTimeString()}
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span class="status-badge" style="background: ${statusColors[call.status]}; color: white;">
+                            ${statusLabels[call.status]}
+                        </span>
+                        <button class="btn btn-danger btn-small" onclick="hangupCall('${call.call_id}')">Hangup</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (error) {
+        list.innerHTML = `<p style="color: #dc3545;">Error: ${error.message}</p>`;
+    }
+}
 
         // Broadcast Form
         document.getElementById('broadcast-form').addEventListener('submit', async (e) => {
