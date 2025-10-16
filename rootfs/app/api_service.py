@@ -202,37 +202,66 @@ async def process_cdr_record(row):
         if len(row) < 17:
             return
         
-        # Parse CDR with correct column positions (18 columns)
+        # Parse CDR with CORRECT column positions (18 total columns)
+        # 0: accountcode (empty)
+        # 1: src (source number)
+        # 2: dst (destination - usually 's' for outbound)
+        # 3: dcontext (destination context)
+        # 4: clid (caller ID with format)
+        # 5: channel
+        # 6: dstchannel (destination channel)
+        # 7: lastapp
+        # 8: lastdata
+        # 9: start (call start time)
+        # 10: answer (answer time)
+        # 11: end (end time)
+        # 12: duration (total duration in seconds)
+        # 13: billsec (billable seconds - talk time)
+        # 14: disposition (ANSWERED/NO ANSWER/BUSY/FAILED)
+        # 15: amaflags
+        # 16: uniqueid
+        # 17: userfield (optional)
+        
         source = row[1]
         dest = row[2]
         context = row[3]
-        channel = row[4]
-        dst_channel = row[5]
-        lastapp = row[6]
-        lastdata = row[7]
-        start = row[8]
-        answer = row[9]
-        end = row[10]
-        duration = row[11]
-        billsec = row[12]
-        disposition = row[13]
+        clid = row[4]
+        channel = row[5]
+        dst_channel = row[6]
+        lastapp = row[7]
+        lastdata = row[8]
+        start = row[9]
+        answer = row[10]
+        end = row[11]
+        duration = row[12]
+        billsec = row[13]
+        disposition = row[14]
         uniqueid = row[16]
         
         # Skip if uniqueid is empty
         if not uniqueid or uniqueid == '':
             return
         
-        # Extract caller_id
+        # Extract caller_id from clid field
         caller_id = ""
-        if "<" in channel and ">" in channel:
-            caller_id = channel.split("<")[1].split(">")[0]
+        if "<" in clid and ">" in clid:
+            caller_id = clid.split("<")[1].split(">")[0]
         
-        # Determine call type
+        # Determine call type and direction
         call_type = "unknown"
         direction = "unknown"
         extension = None
         
-        if context == "internal":
+        # Determine based on context
+        if context == "outbound-playback":
+            call_type = "outbound"
+            direction = "outbound"
+            # Extract actual destination from lastdata or channel
+            # For outbound calls, source is usually the number being called
+            if source and source != "s":
+                dest = source  # The real destination
+                source = "System"  # Or extension number if available
+        elif context == "internal":
             if dest.startswith("1") and len(dest) == 3:
                 call_type = "internal"
                 direction = "internal"
@@ -253,6 +282,17 @@ async def process_cdr_record(row):
         if "SIP/" in dst_channel:
             try:
                 extension = dst_channel.split("/")[1].split("-")[0]
+            except:
+                pass
+        
+        # Parse extension from channel if not found
+        if not extension and "SIP/" in channel:
+            try:
+                extension = channel.split("/")[1].split("-")[0]
+                # Check if it looks like an extension (3 digits starting with 1)
+                if not (extension.startswith("1") and len(extension) == 3):
+                    if extension == "trunk_main":
+                        extension = None  # This is the trunk, not an extension
             except:
                 pass
         
@@ -282,10 +322,12 @@ async def process_cdr_record(row):
         conn.commit()
         conn.close()
         
-        logger.info(f"📞 Recorded call: {source} → {dest} ({call_type})")
+        logger.info(f"📞 Recorded call: {source} → {dest} ({call_type}) - Duration: {duration_int}s, Talk: {billsec_int}s, Status: {disposition}")
         
     except Exception as e:
         logger.error(f"Error processing CDR: {e}")
+        logger.error(f"Row data: {row}")
+
 
 def migrate_database():
     """Migrate database to add contact names"""
