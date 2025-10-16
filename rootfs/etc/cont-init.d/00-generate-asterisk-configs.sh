@@ -83,16 +83,20 @@ progressinband=yes
 EOF
 fi
 
-# Add extensions
+# Add extensions - FIXED parsing
 bashio::log.info "Adding SIP extensions..."
-EXTENSIONS=$(bashio::config 'extensions')
-for extension in $(bashio::jq "${EXTENSIONS}" '.[]'); do
-    EXT_NUMBER=$(bashio::jq "${extension}" '.number')
-    EXT_NAME=$(bashio::jq "${extension}" '.name')
-    EXT_SECRET=$(bashio::jq "${extension}" '.secret')
-    EXT_CALLER_ID=$(bashio::jq "${extension}" '.caller_id // ""')
+
+# Get number of extensions
+EXT_COUNT=$(bashio::config 'extensions | length')
+
+# Loop through each extension by index
+for (( i=0; i<${EXT_COUNT}; i++ )); do
+    EXT_NUMBER=$(bashio::config "extensions[${i}].number")
+    EXT_NAME=$(bashio::config "extensions[${i}].name")
+    EXT_SECRET=$(bashio::config "extensions[${i}].secret")
+    EXT_CALLER_ID=$(bashio::config "extensions[${i}].caller_id" || echo "")
     
-    if [ -z "${EXT_CALLER_ID}" ]; then
+    if [ -z "${EXT_CALLER_ID}" ] || [ "${EXT_CALLER_ID}" == "null" ]; then
         OUTBOUND_CID="null"
     else
         OUTBOUND_CID="${EXT_CALLER_ID}"
