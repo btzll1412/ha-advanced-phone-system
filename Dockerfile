@@ -47,6 +47,10 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8088/health || exit 1
 
 # Labels
+
+
+# Make startup scripts executable
+RUN chmod +x /etc/cont-init.d/*.sh
 LABEL io.hass.version="1.1.0" \
       io.hass.type="addon" \
       io.hass.arch="armhf|armv7|aarch64|amd64|i386"
