@@ -383,6 +383,26 @@ async def startup_event():
     os.makedirs(ASTERISK_SOUNDS, exist_ok=True)
     logger.info("✓ API Service started")
 
+def migrate_database_v2():
+    """Add is_voicemail column to call_history"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Check if is_voicemail column exists
+    cursor.execute("PRAGMA table_info(call_history)")
+    columns = [column[1] for column in cursor.fetchall()]
+    
+    if 'is_voicemail' not in columns:
+        logger.info("Migrating database: adding is_voicemail column")
+        cursor.execute('''
+            ALTER TABLE call_history 
+            ADD COLUMN is_voicemail INTEGER DEFAULT NULL
+        ''')
+        conn.commit()
+        logger.info("✓ Database migration v2 completed")
+    
+    conn.close()
+
 
 # ============================================================================
 # MODELS
