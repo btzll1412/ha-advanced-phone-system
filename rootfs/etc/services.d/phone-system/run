@@ -213,7 +213,7 @@ chown -R asterisk:asterisk /var/lib/asterisk/sounds/custom_prompts
 # Around line 200-250 in the run script, find where it writes to extensions.conf
 # Look for the section that creates [outbound-playback]
 
-cat >> /etc/asterisk/extensions.conf << 'EOF_OUTBOUND'
+cat > /etc/asterisk/extensions.conf << 'EOF_OUTBOUND'
 [outbound-playback]
 ; Context for automated outbound calls (Duration-based detection)
 exten => s,1,NoOp(=== Outbound Call Started ===)
