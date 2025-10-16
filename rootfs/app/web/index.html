@@ -673,45 +673,68 @@
             <h2 style="margin-bottom: 20px; color: #333;">Call History</h2>
             
             <!-- Filters -->
-            <div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                    <div>
-                        <label style="display: block; margin-bottom: 5px; font-weight: 500;">Call Type</label>
-                        <select id="filter-call-type" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-                            <option value="">All Types</option>
-                            <option value="outbound">Outbound</option>
-                            <option value="inbound">Inbound</option>
-                            <option value="internal">Internal</option>
-                            <option value="recording_system">Recording System</option>
-                            <option value="broadcast">Broadcast</option>
-                        </select>
-                    </div>
-                    
-                    <div>
-                        <label style="display: block; margin-bottom: 5px; font-weight: 500;">Extension</label>
-                        <select id="filter-extension" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-                            <option value="">All Extensions</option>
-                        </select>
-                    </div>
-                    
-                    <div>
-                        <label style="display: block; margin-bottom: 5px; font-weight: 500;">Disposition</label>
-                        <select id="filter-disposition" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-                            <option value="">All Status</option>
-                            <option value="ANSWERED">Answered</option>
-                            <option value="VOICEMAIL">Voicemail</option>
-                            <option value="NO ANSWER">No Answer</option>
-                            <option value="BUSY">Busy</option>
-                        </select>
-                    </div>
-                    
-                    <div style="display: flex; align-items: flex-end;">
-                        <button onclick="applyCallFilters()" style="width: 100%; padding: 8px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
-                            Apply Filters
-                        </button>
-                    </div>
-                </div>
-            </div>
+<div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+        <div>
+            <label style="display: block; margin-bottom: 5px; font-weight: 500;">Call Type</label>
+            <select id="filter-call-type" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <option value="">All Types</option>
+                <option value="outbound">Outbound</option>
+                <option value="inbound">Inbound</option>
+                <option value="internal">Internal</option>
+                <option value="recording_system">Recording System</option>
+                <option value="broadcast">Broadcast</option>
+            </select>
+        </div>
+        
+        <div>
+            <label style="display: block; margin-bottom: 5px; font-weight: 500;">Extension</label>
+            <select id="filter-extension" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <option value="">All Extensions</option>
+            </select>
+        </div>
+        
+        <div>
+            <label style="display: block; margin-bottom: 5px; font-weight: 500;">Status</label>
+            <select id="filter-disposition" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <option value="">All Status</option>
+                <option value="ANSWERED">Answered</option>
+                <option value="VOICEMAIL">Voicemail</option>
+                <option value="NO ANSWER">No Answer</option>
+                <option value="BUSY">Busy</option>
+            </select>
+        </div>
+        
+        <!-- NEW: Caller ID Filter -->
+        <div>
+            <label style="display: block; margin-bottom: 5px; font-weight: 500;">Caller ID Used</label>
+            <select id="filter-caller-id" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <option value="">All Caller IDs</option>
+            </select>
+        </div>
+        
+        <!-- NEW: Source Number Filter -->
+        <div>
+            <label style="display: block; margin-bottom: 5px; font-weight: 500;">From Number</label>
+            <input type="text" id="filter-source" placeholder="e.g., 8455851850" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+        </div>
+        
+        <!-- NEW: Destination Number Filter -->
+        <div>
+            <label style="display: block; margin-bottom: 5px; font-weight: 500;">To Number</label>
+            <input type="text" id="filter-destination" placeholder="e.g., 8455021412" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+        </div>
+        
+        <div style="display: flex; align-items: flex-end; gap: 10px;">
+            <button onclick="applyCallFilters()" style="flex: 1; padding: 8px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                Apply Filters
+            </button>
+            <button onclick="clearCallFilters()" style="flex: 1; padding: 8px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                Clear
+            </button>
+        </div>
+    </div>
+</div>
             
             <!-- Call Records Table -->
             <div style="background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
@@ -1568,48 +1591,58 @@
         }
 
         async function loadCallRecords() {
-            try {
-                const response = await fetch('/api/call_records?limit=100');
-                const records = await response.json();
-                
-                const tableBody = document.getElementById('call-records-table');
-                
-                if (!records || records.length === 0) {
-                    tableBody.innerHTML = `
-                        <tr>
-                            <td colspan="9" style="padding: 40px; text-align: center; color: #6c757d;">
-                                No call history available yet. Make a call to see it here!
-                            </td>
-                        </tr>
-                    `;
-                    return;
-                }
-                
-                // Populate extension filter
-                const extensions = [...new Set(records.filter(r => r.extension).map(r => r.extension))];
-                const extFilter = document.getElementById('filter-extension');
-                extFilter.innerHTML = '<option value="">All Extensions</option>';
-                extensions.forEach(ext => {
-                    const option = document.createElement('option');
-                    option.value = ext;
-                    option.textContent = `Extension ${ext}`;
-                    extFilter.appendChild(option);
-                });
-                
-                displayCallRecords(records);
-                
-            } catch (error) {
-                console.error('Error loading call records:', error);
-                document.getElementById('call-records-table').innerHTML = `
-                    <tr>
-                        <td colspan="9" style="padding: 40px; text-align: center; color: #dc3545;">
-                            Error loading call history
-                        </td>
-                    </tr>
-                `;
-            }
+    try {
+        const response = await fetch('/api/call_records?limit=100');
+        const records = await response.json();
+        
+        const tableBody = document.getElementById('call-records-table');
+        
+        if (!records || records.length === 0) {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="9" style="padding: 40px; text-align: center; color: #6c757d;">
+                        No call history available yet. Make a call to see it here!
+                    </td>
+                </tr>
+            `;
+            return;
         }
-
+        
+        // Populate extension filter
+        const extensions = [...new Set(records.filter(r => r.extension).map(r => r.extension))];
+        const extFilter = document.getElementById('filter-extension');
+        extFilter.innerHTML = '<option value="">All Extensions</option>';
+        extensions.forEach(ext => {
+            const option = document.createElement('option');
+            option.value = ext;
+            option.textContent = `Extension ${ext}`;
+            extFilter.appendChild(option);
+        });
+        
+        // Populate caller ID filter
+        const callerIds = [...new Set(records.filter(r => r.caller_id).map(r => r.caller_id))];
+        const callerIdFilter = document.getElementById('filter-caller-id');
+        callerIdFilter.innerHTML = '<option value="">All Caller IDs</option>';
+        callerIds.forEach(cid => {
+            const option = document.createElement('option');
+            option.value = cid;
+            option.textContent = cid;
+            callerIdFilter.appendChild(option);
+        });
+        
+        displayCallRecords(records);
+        
+    } catch (error) {
+        console.error('Error loading call records:', error);
+        document.getElementById('call-records-table').innerHTML = `
+            <tr>
+                <td colspan="9" style="padding: 40px; text-align: center; color: #dc3545;">
+                    Error loading call history
+                </td>
+            </tr>
+        `;
+    }
+}
         function displayCallRecords(records) {
     const tableBody = document.getElementById('call-records-table');
     
@@ -1821,44 +1854,77 @@
         }
 
         function applyCallFilters() {
-            const typeFilter = document.getElementById('filter-call-type').value;
-            const extFilter = document.getElementById('filter-extension').value;
-            const dispFilter = document.getElementById('filter-disposition').value;
+    const typeFilter = document.getElementById('filter-call-type').value;
+    const extFilter = document.getElementById('filter-extension').value;
+    const dispFilter = document.getElementById('filter-disposition').value;
+    const callerIdFilter = document.getElementById('filter-caller-id').value;
+    const sourceFilter = document.getElementById('filter-source').value.trim();
+    const destFilter = document.getElementById('filter-destination').value.trim();
+    
+    let url = '/api/call_records?limit=100';
+    if (typeFilter) url += `&call_type=${typeFilter}`;
+    
+    fetch(url)
+        .then(r => r.json())
+        .then(records => {
+            let filtered = records;
             
-            let url = '/api/call_records?limit=100';
-            if (typeFilter) url += `&call_type=${typeFilter}`;
+            // Filter by extension
+            if (extFilter) {
+                filtered = filtered.filter(r => r.extension === extFilter);
+            }
             
-            fetch(url)
-                .then(r => r.json())
-                .then(records => {
-                    let filtered = records;
+            // Filter by caller ID
+            if (callerIdFilter) {
+                filtered = filtered.filter(r => r.caller_id === callerIdFilter);
+            }
+            
+            // Filter by source number (partial match)
+            if (sourceFilter) {
+                filtered = filtered.filter(r => 
+                    r.source_number && r.source_number.includes(sourceFilter)
+                );
+            }
+            
+            // Filter by destination number (partial match)
+            if (destFilter) {
+                filtered = filtered.filter(r => 
+                    r.destination_number && r.destination_number.includes(destFilter)
+                );
+            }
+            
+            // Filter by disposition/status
+            if (dispFilter) {
+                filtered = filtered.filter(r => {
+                    const billsec = parseInt(r.billsec) || 0;
+                    const duration = parseInt(r.duration) || 0;
                     
-                    if (extFilter) {
-                        filtered = filtered.filter(r => r.extension === extFilter);
+                    if (dispFilter === 'ANSWERED') {
+                        return billsec > 0;
+                    } else if (dispFilter === 'VOICEMAIL') {
+                        return billsec === 0 && duration > 0;
+                    } else if (dispFilter === 'NO ANSWER') {
+                        return r.disposition === 'NO ANSWER';
+                    } else if (dispFilter === 'BUSY') {
+                        return r.disposition === 'BUSY';
                     }
-                    
-                    if (dispFilter) {
-                        filtered = filtered.filter(r => {
-                            const billsec = parseInt(r.billsec) || 0;
-                            const duration = parseInt(r.duration) || 0;
-                            
-                            if (dispFilter === 'ANSWERED') {
-                                return billsec > 0;
-                            } else if (dispFilter === 'VOICEMAIL') {
-                                return billsec === 0 && duration > 0;
-                            } else if (dispFilter === 'NO ANSWER') {
-                                return r.disposition === 'NO ANSWER';
-                            } else if (dispFilter === 'BUSY') {
-                                return r.disposition === 'BUSY';
-                            }
-                            return true;
-                        });
-                    }
-                    
-                    displayCallRecords(filtered);
+                    return true;
                 });
-        }
+            }
+            
+            displayCallRecords(filtered);
+        });
+}
 
+function clearCallFilters() {
+    document.getElementById('filter-call-type').value = '';
+    document.getElementById('filter-extension').value = '';
+    document.getElementById('filter-disposition').value = '';
+    document.getElementById('filter-caller-id').value = '';
+    document.getElementById('filter-source').value = '';
+    document.getElementById('filter-destination').value = '';
+    loadCallRecords();
+}
         setInterval(() => {
             if (document.querySelector('.tab.active')?.textContent.trim() === 'Call History') {
                 loadCallRecords();
