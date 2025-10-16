@@ -34,6 +34,11 @@ SIP_FROM_DOMAIN=$(bashio::config 'sip_trunk.from_domain')
     echo "progressinband=yes"
     echo "callprogress=yes"
     echo ""
+    echo "; RTP Media Path"
+    echo "directmedia=no"
+    echo "directrtpsetup=no"
+    echo "rtcpinterval=5"
+    echo ""
     echo "; Codecs"
     echo "disallow=all"
     echo "allow=ulaw"
@@ -77,6 +82,9 @@ if bashio::var.true "${SIP_ENABLED}"; then
         echo "qualify=yes"
         echo "nat=force_rport,comedia"
         echo "progressinband=yes"
+        echo "directmedia=no"
+        echo "directrtpsetup=no"
+        echo "rtcpmux=no"
         echo ""
     } >> ${SIP_CONF}
 fi
