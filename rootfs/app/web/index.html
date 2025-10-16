@@ -1613,19 +1613,23 @@
                     ? date.toLocaleString()
                     : record.created_at;
                 
-                // FIXED: Proper answered vs voicemail detection
+                // IMPROVED: Better answered vs voicemail detection
                 const billsec = parseInt(record.billsec) || 0;
                 const duration = parseInt(record.duration) || 0;
                 const disposition = record.disposition || '';
+                const lastapp = record.lastapp || '';
                 
                 let status = 'UNKNOWN';
                 let statusColor = '#718096';
                 
-                // Determine actual status
-                if (billsec > 0) {
-                    status = 'ANSWERED';
-                    statusColor = '#48bb78';
-                } else if (duration > 0) {
+                // Check if call went to voicemail system
+                const isVoicemail = lastapp.toLowerCase().includes('voicemail') || 
+                                  record.destination_channel?.includes('voicemail') ||
+                                  record.context?.includes('voicemail');
+                
+                // Determine actual status with improved logic
+                if (isVoicemail) {
+                    // Definitely went to voicemail
                     status = 'VOICEMAIL';
                     statusColor = '#ed8936';
                 } else if (disposition === 'NO ANSWER') {
@@ -1633,6 +1637,21 @@
                     statusColor = '#f56565';
                 } else if (disposition === 'BUSY') {
                     status = 'BUSY';
+                    statusColor = '#f56565';
+                } else if (disposition === 'FAILED') {
+                    status = 'FAILED';
+                    statusColor = '#f56565';
+                } else if (billsec >= 3) {
+                    // If talk time is 3+ seconds and didn't go to voicemail, person answered
+                    status = 'ANSWERED';
+                    statusColor = '#48bb78';
+                } else if (billsec > 0 && billsec < 3) {
+                    // Quick hangup/decline
+                    status = 'DECLINED';
+                    statusColor = '#ed8936';
+                } else if (duration > 0) {
+                    // Rang but no talk time
+                    status = 'NO ANSWER';
                     statusColor = '#f56565';
                 }
                 
@@ -1667,8 +1686,8 @@
                             </span>
                         </td>
                         <td style="padding: 12px;">
-                            <div>${duration}s</div>
-                            ${billsec > 0 ? `<div style="font-size: 11px; color: #6c757d;">(${billsec}s talk)</div>` : ''}
+                            <div style="font-weight: 600; font-size: 16px;">${billsec}s</div>
+                            <div style="font-size: 11px; color: #6c757d;">(${duration}s total)</div>
                         </td>
                         <td style="padding: 12px;">
                             <span style="background: ${statusColor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;">
@@ -1728,14 +1747,23 @@
             const duration = parseInt(record.duration) || 0;
             
             let status = 'UNKNOWN';
-            if (billsec > 0) {
+            let statusEmoji = '❓';
+            
+            if (billsec >= 3) {
                 status = 'ANSWERED';
+                statusEmoji = '✅';
+            } else if (billsec > 0 && billsec < 3) {
+                status = 'DECLINED/QUICK HANGUP';
+                statusEmoji = '⚠️';
             } else if (duration > 0) {
-                status = 'VOICEMAIL/MISSED';
+                status = 'VOICEMAIL/NO ANSWER';
+                statusEmoji = '⚠️';
             } else if (record.disposition === 'NO ANSWER') {
                 status = 'NO ANSWER';
+                statusEmoji = '❌';
             } else if (record.disposition === 'BUSY') {
                 status = 'BUSY';
+                statusEmoji = '❌';
             }
             
             content.innerHTML = `
@@ -1744,7 +1772,7 @@
                         <strong>Unique ID:</strong><span>${record.uniqueid || 'N/A'}</span>
                         <strong>Call Type:</strong><span>${formatCallType(record.call_type || 'outbound')}</span>
                         <strong>Direction:</strong><span>${record.direction || 'outbound'}</span>
-                        <strong>Status:</strong><span style="color: ${billsec > 0 ? '#48bb78' : '#ed8936'}; font-weight: bold;">${status}</span>
+                        <strong>Status:</strong><span style="color: ${billsec >= 3 ? '#48bb78' : '#ed8936'}; font-weight: bold;">${status}</span>
                     </div>
                     
                     <div style="display: grid; grid-template-columns: 140px 1fr; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
@@ -1756,9 +1784,9 @@
                     
                     <div style="display: grid; grid-template-columns: 140px 1fr; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
                         <strong>Time:</strong><span>${date.toLocaleString()}</span>
-                        <strong>Total Duration:</strong><span>${duration}s</span>
-                        <strong>Talk Time:</strong><span style="color: ${billsec > 0 ? '#48bb78' : '#dc3545'}; font-weight: bold;">${billsec}s</span>
-                        <strong>Result:</strong><span>${billsec > 0 ? '✅ Person answered and talked' : '⚠️ Went to voicemail or not answered'}</span>
+                        <strong>Total Duration:</strong><span>${duration}s (ring + talk)</span>
+                        <strong>Talk Time:</strong><span style="color: ${billsec >= 3 ? '#48bb78' : '#dc3545'}; font-weight: bold; font-size: 18px;">${billsec}s</span>
+                        <strong>Result:</strong><span>${statusEmoji} ${billsec >= 3 ? 'Person answered and talked' : billsec > 0 ? 'Call declined or quick hangup' : 'Went to voicemail or not answered'}</span>
                     </div>
                     
                     <div style="display: grid; grid-template-columns: 140px 1fr; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
