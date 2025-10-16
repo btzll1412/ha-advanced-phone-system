@@ -363,6 +363,27 @@ def migrate_database():
         logger.info("✓ Database migration completed")
     
     conn.close()
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize on startup"""
+    init_database()
+    logger.info("✓ Database initialized")
+    
+    migrate_database()
+    logger.info("✓ Database migrated")
+    
+    migrate_database_v2()  # ← ADD THIS LINE
+    logger.info("✓ Database migrated v2")
+    
+    asyncio.create_task(monitor_cdr())
+    logger.info("✓ CDR monitoring task started")
+    
+    os.makedirs(RECORDINGS_PATH, exist_ok=True)
+    os.makedirs(ASTERISK_SOUNDS, exist_ok=True)
+    logger.info("✓ API Service started")
+
+
 # ============================================================================
 # MODELS
 # ============================================================================
@@ -788,6 +809,67 @@ async def update_call_status(call_id: str, status: str):
         cursor = conn.cursor()
         
         if status == "completed":
+            cursor.execute('''
+                UPDATE call_history 
+                SET status = ?, ended_at = CURRENT_TIMESTAMP,
+                    duration = (julianday(CURRENT_TIMESTAMP) - julianday(started_at)) * 86400
+                WHERE call_id = ?
+            ''', (status, call_id))
+            
+            # Update broadcast stats
+            cursor.execute('SELECT broadcast_id FROM call_history WHERE call_id = ?', (call_id,))
+            row = cursor.fetchone()
+            if row and row[0]:
+                broadcast_id = row[0]
+                cursor.execute('''
+                    UPDATE broadcasts 
+                    SET completed = completed + 1, in_progress = in_progress - 1
+                    WHERE broadcast_id = ?
+                ''', (broadcast_id,))
+        
+        elif status == "hangup" or status == "failed":
+            cursor.execute('''
+                UPDATE call_history 
+                SET status = ?, ended_at = CURRENT_TIMESTAMP
+                WHERE call_id = ?
+            ''', (status, call_id))
+            
+            # Update broadcast stats
+            cursor.execute('SELECT broadcast_id FROM call_history WHERE call_id = ?', (call_id,))
+            row = cursor.fetchone()
+            if row and row[0]:
+                broadcast_id = row[0]
+                cursor.execute('''
+                    UPDATE broadcasts 
+                    SET failed = failed + 1, in_progress = in_progress - 1
+                    WHERE broadcast_id = ?
+                ''', (broadcast_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"status": "ok"}
+        
+    except Exception as e:
+        logger.error(f"Error updating call status: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/call_status")
+async def update_call_status(call_id: str, status: str, is_voicemail: int = None):
+    """Update call status from Asterisk"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # NEW: Store voicemail detection result
+        if is_voicemail is not None:
+            cursor.execute('''
+                UPDATE call_history 
+                SET status = ?, is_voicemail = ?
+                WHERE call_id = ?
+            ''', (status, is_voicemail, call_id))
+        elif status == "completed":
             cursor.execute('''
                 UPDATE call_history 
                 SET status = ?, ended_at = CURRENT_TIMESTAMP,
