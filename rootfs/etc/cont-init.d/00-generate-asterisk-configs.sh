@@ -32,7 +32,7 @@ SIP_FROM_DOMAIN=$(bashio::config 'sip_trunk.from_domain')
     echo ""
     echo "; CALL PROGRESS ANALYSIS - Voicemail Detection"
     echo "progressinband=yes"
-    echo "callprogress=yes
+    echo "callprogress=yes"
     echo ""
     echo "; Codecs"
     echo "disallow=all"
