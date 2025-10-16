@@ -267,11 +267,11 @@ exten => s,1,NoOp(=== Outbound Call Started ===)
 exten => h,1,NoOp(=== Call Ended ===)
     same => n,System(curl -X POST "http://localhost:8088/api/call_status?call_id=${CALL_ID}&status=hangup&is_voicemail=${IS_VOICEMAIL}" 2>/dev/null)
 EOF_OUTBOUND
-```
 
-### **AMD Parameters Explained:**
-```
-AMD(initialSilence, greeting, afterGreetingSilence, totalAnalysisTime, minimumWordLength, betweenWordsSilence, maximumNumberOfWords, silenceThreshold)
+
+cat >> /etc/asterisk/extensions.conf << 'EOFEXT'
+
+
 
 
 ; ============================================
