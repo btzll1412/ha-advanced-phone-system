@@ -2090,6 +2090,42 @@ function downloadCSVTemplate() {
     document.body.removeChild(link);
 }
 
+function updateCallHistory() {
+    fetch('/api/call_history?limit=10')
+        .then(response => response.json())
+        .then(calls => {
+            const tbody = document.getElementById('call-history-body');
+            tbody.innerHTML = '';
+            
+            calls.forEach(call => {
+                // ✅ Direction icon
+                let directionIcon = '';
+                if (call.direction === 'internal') {
+                    directionIcon = '🏠';  // Internal
+                } else if (call.direction === 'inbound') {
+                    directionIcon = '📥';  // Incoming
+                } else if (call.direction === 'outbound') {
+                    directionIcon = '📤';  // Outgoing
+                }
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${directionIcon} ${call.direction}</td>
+                    <td>${call.source || 'Unknown'}</td>
+                    <td>${call.destination || 'Unknown'}</td>
+                    <td>${call.duration || 0}s</td>
+                    <td>${call.disposition || 'UNKNOWN'}</td>
+                    <td>${new Date(call.timestamp).toLocaleString()}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        })
+        .catch(error => {
+            console.error('Error fetching call history:', error);
+        });
+}
+
+
 function importGroupCSV(event) {
     const file = event.target.files[0];
     if (!file) return;
