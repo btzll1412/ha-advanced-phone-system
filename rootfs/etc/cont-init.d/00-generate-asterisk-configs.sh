@@ -34,10 +34,15 @@ bashio::log.info "Generating sip.conf..."
     echo "srvlookup=yes"
     echo "allowguest=no"
     echo "alwaysauthreject=yes"
+    
+    # ✅ ADD THESE LINES FOR BETTER NAT HANDLING
     echo "nat=force_rport,comedia"
+    echo "externip=$(curl -s ifconfig.me)"  # Get your public IP
+    echo "localnet=192.168.0.0/255.255.0.0"  # Your local network
     echo "externrefresh=10"
+    
     echo ""
-    echo "; CALL PROGRESS ANALYSIS - Voicemail Detection"
+    echo "; CALL PROGRESS ANALYSIS"
     echo "progressinband=yes"
     echo "callprogress=yes"
     echo ""
