@@ -813,81 +813,72 @@ class CallDirection(str, Enum):
     INBOUND = "inbound"
 
 
-def detect_call_type(number: str) -> tuple[CallDirection, str]:
-    """
-    Detect if number is internal extension or external
-    Returns: (call_direction, formatted_number)
-    """
-    # Remove all non-digits
+def detect_call_type(number: str) -> tuple:
+    """Detect if number is internal or external"""
     digits = ''.join(filter(str.isdigit, number))
     
-    # Internal extension detection (2-4 digits)
+    # Internal: 3-4 digits
     if len(digits) <= 4:
-        logger.info(f"🏠 Detected INTERNAL call to extension: {digits}")
+        logger.info(f"🏠 INTERNAL call to extension: {digits}")
         return (CallDirection.INTERNAL, digits)
     
-    # External number (10-11 digits)
+    # External: 10+ digits
     elif len(digits) >= 10:
-        # Format to E.164
         if len(digits) == 10:
-            # Add country code (assume US +1)
             formatted = f'+1{digits}'
+        elif len(digits) == 11:
+            formatted = f'+{digits}'
         else:
             formatted = f'+{digits}'
         
-        logger.info(f"📞 Detected OUTBOUND call to: {formatted}")
+        logger.info(f"📤 OUTBOUND call to: {formatted}")
         return (CallDirection.OUTBOUND, formatted)
     
     else:
-        raise ValueError(f"Invalid number format: {number}. Must be 2-4 digits (internal) or 10+ digits (external)")
+        raise ValueError(f"Invalid number: {number}")
 
 
-def get_channel_string(call_direction: CallDirection, number: str, caller_id: str = None) -> str:
-    """
-    Generate appropriate Asterisk channel string based on call type
-    """
-    if call_direction == CallDirection.INTERNAL:
-        # Internal: Direct to extension via PJSIP
-        return f"PJSIP/{number}"
-    
-    elif call_direction == CallDirection.OUTBOUND:
-        # External: Route through trunk
-        # Remove + for trunk routing
-        clean_number = number.lstrip('+')
-        return f"PJSIP/{clean_number}@trunk_main"
-    
+def get_channel_string(direction: CallDirection, number: str) -> str:
+    """Generate Asterisk channel string for chan_sip"""
+    if direction == CallDirection.INTERNAL:
+        # Internal: SIP/extension
+        return f"SIP/{number}"
     else:
-        raise ValueError(f"Unknown call direction: {call_direction}")
+        # External: SIP/trunk_main/number
+        clean = number.lstrip('+')
+        return f"SIP/trunk_main/{clean}"
 
 
-# Update the make_call endpoint
+# Update your /api/call endpoint:
 @app.post("/api/call")
-async def make_call(call_data: dict):
+async def make_call(request: Request):
     try:
-        phone_number = call_data.get('phone_number')
-        message = call_data.get('message')
+        data = await request.json()
+        phone_number = data.get('phone_number', '')
+        message = data.get('message', '')
         
         logger.info(f"📞 Call request: {phone_number}")
         
-        # ✅ Detect call type
+        # Detect call type
         direction, formatted_number = detect_call_type(phone_number)
         
         # Generate TTS
-        audio_file = await generate_tts(message)
+        audio_file = generate_tts(message)  # Your existing function
         call_id = str(uuid.uuid4())
         
-        # ✅ Get channel based on direction
+        # Get caller ID
+        caller_number = os.getenv('CALLER_NUMBER', '')
+        
+        # Build channel based on direction
         channel = get_channel_string(direction, formatted_number)
         
-        # Caller ID
-        caller_id = os.getenv('CALLER_NUMBER', '18455851850')
-        
-        # ✅ Build call file
+        # Set caller ID
         if direction == CallDirection.INTERNAL:
-            callerid_line = f'CallerID: "Internal" <100>'
+            callerid_line = f'CallerID: "System" <100>'
         else:
-            callerid_line = f'CallerID: "{caller_id}" <{caller_id}>'
+            callerid_line = f'CallerID: "{caller_number}" <{caller_number}>'
         
+        # Create call file
         call_file_content = f"""Channel: {channel}
 {callerid_line}
 MaxRetries: 2
@@ -922,7 +913,7 @@ Setvar: PRE_MESSAGE_DELAY=1
             "status": "success",
             "call_id": call_id,
             "direction": direction,
-            "number": formatted_number
+            "phone_number": formatted_number
         }
         
     except ValueError as e:
@@ -931,7 +922,6 @@ Setvar: PRE_MESSAGE_DELAY=1
     except Exception as e:
         logger.error(f"❌ Call error: {e}")
         return {"status": "error", "message": str(e)}
-
 @app.post("/api/broadcast")
 async def create_broadcast(request: BroadcastRequest, background_tasks: BackgroundTasks):
     """Create and start a broadcast"""
