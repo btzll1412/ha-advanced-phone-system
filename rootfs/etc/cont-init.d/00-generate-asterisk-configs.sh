@@ -1,6 +1,6 @@
 #!/usr/bin/with-contenv bashio
 # ==============================================================================
-# Generate Asterisk SIP configuration ONLY
+# Generate Asterisk SIP configuration from Home Assistant options
 # ==============================================================================
 
 bashio::log.info "Generating Asterisk SIP configuration..."
@@ -71,7 +71,7 @@ if bashio::var.true "${SIP_ENABLED}"; then
         echo "secret=${SIP_PASSWORD}"
         echo "fromdomain=${SIP_FROM_DOMAIN}"
         echo "insecure=port,invite"
-        echo "context=from-external"
+        echo "context=inbound"
         echo "dtmfmode=rfc2833"
         echo "canreinvite=no"
         echo "qualify=yes"
@@ -100,7 +100,7 @@ for (( i=0; i<${EXT_COUNT}; i++ )); do
         echo "[${EXT_NUMBER}]"
         echo "type=friend"
         echo "secret=${EXT_SECRET}"
-        echo "context=default"
+        echo "context=internal"
         echo "host=dynamic"
         echo "dtmfmode=rfc2833"
         echo "canreinvite=no"
