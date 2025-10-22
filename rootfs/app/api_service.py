@@ -333,6 +333,39 @@ async def process_cdr_record(row):
         logger.error(f"Error processing CDR: {e}")
         logger.error(f"Row data: {row}")
 
+async def record_call_to_db(call_data: dict):
+    """Record call with direction tracking"""
+    try:
+        call_id = call_data.get('UniqueID', str(uuid.uuid4()))
+        source = call_data.get('Source', 'Unknown')
+        destination = call_data.get('Destination', 'Unknown')
+        duration = call_data.get('Duration', 0)
+        billsec = call_data.get('BillableSeconds', 0)
+        disposition = call_data.get('Disposition', 'UNKNOWN')
+        direction = call_data.get('Direction', 'unknown')  # ✅ NEW
+        
+        # ✅ Auto-detect direction if not provided
+        if direction == 'unknown':
+            if len(destination.replace('+', '')) <= 4:
+                direction = 'internal'
+            elif source.startswith('PJSIP/trunk'):
+                direction = 'inbound'
+            else:
+                direction = 'outbound'
+        
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("""
+                INSERT INTO call_history 
+                (call_id, source, destination, duration, billsec, disposition, direction, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """, (call_id, source, destination, duration, billsec, disposition, direction))
+            await db.commit()
+        
+        logger.info(f"📞 Recorded {direction.upper()} call: {source} → {destination} - {disposition}")
+        
+    except Exception as e:
+        logger.error(f"Failed to record call: {e}")
+
 def migrate_database():
     """Migrate database to add contact names"""
     conn = sqlite3.connect(DB_PATH)
