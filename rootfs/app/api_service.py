@@ -27,6 +27,53 @@ import grp
 import hashlib
 from gtts import gTTS
 
+from enum import Enum
+
+class CallDirection(str, Enum):
+    INTERNAL = "internal"
+    OUTBOUND = "outbound"
+    INBOUND = "inbound"
+
+
+def detect_call_type(number: str) -> tuple:
+    """
+    Detect if number is internal or external
+    Returns: (CallDirection, formatted_number)
+    """
+    # Remove non-digits
+    digits = ''.join(filter(str.isdigit, number))
+    
+    # Internal: 2-4 digits
+    if len(digits) <= 4:
+        logger.info(f"🏠 INTERNAL call detected: {digits}")
+        return (CallDirection.INTERNAL, digits)
+    
+    # External: 10+ digits
+    elif len(digits) >= 10:
+        # Format to E.164
+        if len(digits) == 10:
+            formatted = f'+1{digits}'
+        elif len(digits) == 11 and digits[0] == '1':
+            formatted = f'+{digits}'
+        else:
+            formatted = f'+{digits}'
+        
+        logger.info(f"📤 OUTBOUND call detected: {formatted}")
+        return (CallDirection.OUTBOUND, formatted)
+    
+    else:
+        raise ValueError(f"Invalid number: {number}")
+
+
+def get_channel_string(direction: CallDirection, number: str) -> str:
+    """Generate Asterisk channel string"""
+    if direction == CallDirection.INTERNAL:
+        return f"PJSIP/{number}"
+    else:
+        # Remove + for trunk routing
+        clean = number.lstrip('+')
+        return f"PJSIP/{clean}@trunk_main"
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -815,40 +862,32 @@ def get_channel_string(call_direction: CallDirection, number: str, caller_id: st
 
 # Update the make_call endpoint
 @app.post("/api/call")
-async def make_call(call_data: CallRequest):
+async def make_call(call_data: dict):
     try:
-        phone_number = call_data.phone_number
-        message = call_data.message
+        phone_number = call_data.get('phone_number')
+        message = call_data.get('message')
         
-        logger.info(f"📞 Call request to: {phone_number}")
+        logger.info(f"📞 Call request: {phone_number}")
         
         # ✅ Detect call type
-        call_direction, formatted_number = detect_call_type(phone_number)
+        direction, formatted_number = detect_call_type(phone_number)
         
         # Generate TTS
-        audio_file = generate_tts(message)
+        audio_file = await generate_tts(message)
         call_id = str(uuid.uuid4())
         
-        # Get caller ID
+        # ✅ Get channel based on direction
+        channel = get_channel_string(direction, formatted_number)
+        
+        # Caller ID
         caller_id = os.getenv('CALLER_NUMBER', '18455851850')
         
-        # ✅ Build channel string based on call type
-        channel = get_channel_string(call_direction, formatted_number, caller_id)
-        
-        logger.info(f"📡 Channel: {channel}")
-        logger.info(f"📍 Direction: {call_direction}")
-        
-        # ✅ Different caller ID handling
-        if call_direction == CallDirection.INTERNAL:
-            # For internal calls, use extension number as caller ID
+        # ✅ Build call file
+        if direction == CallDirection.INTERNAL:
             callerid_line = f'CallerID: "Internal" <100>'
         else:
-            # For external calls, use your DID
-            if not caller_id.startswith('+'):
-                caller_id = f'+{caller_id}'
             callerid_line = f'CallerID: "{caller_id}" <{caller_id}>'
         
-        # Create call file
         call_file_content = f"""Channel: {channel}
 {callerid_line}
 MaxRetries: 2
@@ -860,12 +899,14 @@ Priority: 1
 Setvar: AUDIO_FILE={audio_file}
 Setvar: CALL_ID={call_id}
 Setvar: PHONE_NUMBER={formatted_number}
-Setvar: CALL_DIRECTION={call_direction}
+Setvar: CALL_DIRECTION={direction}
+Setvar: PRE_MESSAGE_DELAY=1
 """
         
-        logger.info(f"Call file content:\n{call_file_content}")
+        logger.info(f"📡 Channel: {channel}")
+        logger.info(f"📍 Direction: {direction}")
         
-        # Write to spool
+        # Write call file
         temp_file = f"/tmp/{call_id}.call"
         final_file = f"/var/spool/asterisk/outgoing/{call_id}.call"
         
@@ -875,29 +916,21 @@ Setvar: CALL_DIRECTION={call_direction}
         os.chmod(temp_file, 0o777)
         os.rename(temp_file, final_file)
         
-        logger.info(f"✅ Call initiated: {call_id} -> {formatted_number} ({call_direction})")
-        
-        # Fire event
-        hass.fire_event('phone_system_call_initiated', {
-            'call_id': call_id,
-            'phone_number': formatted_number,
-            'direction': call_direction,
-            'timestamp': datetime.now().isoformat()
-        })
+        logger.info(f"✅ Call initiated: {call_id}")
         
         return {
             "status": "success",
             "call_id": call_id,
-            "phone_number": formatted_number,
-            "direction": call_direction
+            "direction": direction,
+            "number": formatted_number
         }
         
     except ValueError as e:
         logger.error(f"❌ Invalid input: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        return {"status": "error", "message": str(e)}
     except Exception as e:
         logger.error(f"❌ Call error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"status": "error", "message": str(e)}
 
 @app.post("/api/broadcast")
 async def create_broadcast(request: BroadcastRequest, background_tasks: BackgroundTasks):
