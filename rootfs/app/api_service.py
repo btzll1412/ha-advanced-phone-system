@@ -724,51 +724,146 @@ async def health():
     """Health check endpoint"""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
-@app.post("/api/call")
-async def make_call(request: CallRequest, background_tasks: BackgroundTasks):
-    """Initiate a phone call"""
-    try:
-        logger.info(f"Call request: {request.phone_number}")
-        
-        # Prepare audio
-        if request.tts_text:
-            audio_file = await generate_tts(request.tts_text)
-        elif request.recording_file:
-            audio_file = request.recording_file
+import re
+from enum import Enum
+
+class CallDirection(str, Enum):
+    INTERNAL = "internal"
+    OUTBOUND = "outbound"
+    INBOUND = "inbound"
+
+
+def detect_call_type(number: str) -> tuple[CallDirection, str]:
+    """
+    Detect if number is internal extension or external
+    Returns: (call_direction, formatted_number)
+    """
+    # Remove all non-digits
+    digits = ''.join(filter(str.isdigit, number))
+    
+    # Internal extension detection (2-4 digits)
+    if len(digits) <= 4:
+        logger.info(f"🏠 Detected INTERNAL call to extension: {digits}")
+        return (CallDirection.INTERNAL, digits)
+    
+    # External number (10-11 digits)
+    elif len(digits) >= 10:
+        # Format to E.164
+        if len(digits) == 10:
+            # Add country code (assume US +1)
+            formatted = f'+1{digits}'
         else:
-            audio_file = request.message
+            formatted = f'+{digits}'
         
-        if not audio_file:
-            raise HTTPException(status_code=400, detail="No audio source provided")
+        logger.info(f"📞 Detected OUTBOUND call to: {formatted}")
+        return (CallDirection.OUTBOUND, formatted)
+    
+    else:
+        raise ValueError(f"Invalid number format: {number}. Must be 2-4 digits (internal) or 10+ digits (external)")
+
+
+def get_channel_string(call_direction: CallDirection, number: str, caller_id: str = None) -> str:
+    """
+    Generate appropriate Asterisk channel string based on call type
+    """
+    if call_direction == CallDirection.INTERNAL:
+        # Internal: Direct to extension via PJSIP
+        return f"PJSIP/{number}"
+    
+    elif call_direction == CallDirection.OUTBOUND:
+        # External: Route through trunk
+        # Remove + for trunk routing
+        clean_number = number.lstrip('+')
+        return f"PJSIP/{clean_number}@trunk_main"
+    
+    else:
+        raise ValueError(f"Unknown call direction: {call_direction}")
+
+
+# Update the make_call endpoint
+@app.post("/api/call")
+async def make_call(call_data: CallRequest):
+    try:
+        phone_number = call_data.phone_number
+        message = call_data.message
         
-        # Create call
-        call_id = create_call_file(
-            request.phone_number,
-            audio_file,
-            request.caller_id,
-            max_retries=request.max_retries,
-            pre_message_delay=request.pre_message_delay,
-            max_ring_time=request.max_ring_time
-        )
+        logger.info(f"📞 Call request to: {phone_number}")
         
-        # Save to database
-        save_call_to_db(call_id, request.phone_number, audio_file, request.caller_id)
+        # ✅ Detect call type
+        call_direction, formatted_number = detect_call_type(phone_number)
         
-        # Fire HA event
-        fire_ha_event("call_initiated", {
-            "call_id": call_id,
-            "phone_number": request.phone_number,
-            "timestamp": datetime.now().isoformat()
+        # Generate TTS
+        audio_file = generate_tts(message)
+        call_id = str(uuid.uuid4())
+        
+        # Get caller ID
+        caller_id = os.getenv('CALLER_NUMBER', '18455851850')
+        
+        # ✅ Build channel string based on call type
+        channel = get_channel_string(call_direction, formatted_number, caller_id)
+        
+        logger.info(f"📡 Channel: {channel}")
+        logger.info(f"📍 Direction: {call_direction}")
+        
+        # ✅ Different caller ID handling
+        if call_direction == CallDirection.INTERNAL:
+            # For internal calls, use extension number as caller ID
+            callerid_line = f'CallerID: "Internal" <100>'
+        else:
+            # For external calls, use your DID
+            if not caller_id.startswith('+'):
+                caller_id = f'+{caller_id}'
+            callerid_line = f'CallerID: "{caller_id}" <{caller_id}>'
+        
+        # Create call file
+        call_file_content = f"""Channel: {channel}
+{callerid_line}
+MaxRetries: 2
+RetryTime: 60
+WaitTime: 30
+Context: outbound-playback
+Extension: s
+Priority: 1
+Setvar: AUDIO_FILE={audio_file}
+Setvar: CALL_ID={call_id}
+Setvar: PHONE_NUMBER={formatted_number}
+Setvar: CALL_DIRECTION={call_direction}
+"""
+        
+        logger.info(f"Call file content:\n{call_file_content}")
+        
+        # Write to spool
+        temp_file = f"/tmp/{call_id}.call"
+        final_file = f"/var/spool/asterisk/outgoing/{call_id}.call"
+        
+        with open(temp_file, 'w') as f:
+            f.write(call_file_content)
+        
+        os.chmod(temp_file, 0o777)
+        os.rename(temp_file, final_file)
+        
+        logger.info(f"✅ Call initiated: {call_id} -> {formatted_number} ({call_direction})")
+        
+        # Fire event
+        hass.fire_event('phone_system_call_initiated', {
+            'call_id': call_id,
+            'phone_number': formatted_number,
+            'direction': call_direction,
+            'timestamp': datetime.now().isoformat()
         })
         
         return {
             "status": "success",
             "call_id": call_id,
-            "phone_number": request.phone_number
+            "phone_number": formatted_number,
+            "direction": call_direction
         }
         
+    except ValueError as e:
+        logger.error(f"❌ Invalid input: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Error making call: {e}")
+        logger.error(f"❌ Call error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/broadcast")
