@@ -365,17 +365,42 @@ async def process_cdr_record(row):
                 pass
         
         # Convert to integers
+        # Convert to integers
         try:
             duration_int = int(float(duration))
             billsec_int = int(float(billsec))
         except:
             duration_int = 0
             billsec_int = 0
+
+        # ✅ FIX: Get correct phone number from call_history if this is an outbound call
+        if context == "outbound-playback":
+            # Try to find the call in call_history to get the correct destination
+            try:
+                conn_temp = sqlite3.connect(DB_PATH)
+                c_temp = conn_temp.cursor()
+                c_temp.execute('''
+                    SELECT phone_number, caller_id 
+                    FROM call_history 
+                    WHERE call_id = ?
+                ''', (uniqueid,))
+                history_row = c_temp.fetchone()
+                conn_temp.close()
         
+                if history_row:
+                    dest = history_row[0]  # Correct phone number
+                    caller_id = history_row[1] if history_row[1] else caller_id  # Correct caller ID
+                    source = "System"
+                    logger.info(f"✅ Retrieved correct data from call_history: dest={dest}, caller_id={caller_id}")
+                else:
+                    logger.warning(f"⚠️ Call {uniqueid} not found in call_history, using CDR data")
+            except Exception as e:
+                logger.error(f"Error looking up call in call_history: {e}")
+
         # Insert into database
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        
+
         c.execute('''
             INSERT OR IGNORE INTO call_records 
             (uniqueid, caller_id, source_number, destination_number, context, 
@@ -386,10 +411,10 @@ async def process_cdr_record(row):
         ''', (uniqueid, caller_id, source, dest, context, channel, dst_channel,
               extension, call_type, direction, start, answer, end, 
               duration_int, billsec_int, disposition, None, None))
-        
+
         conn.commit()
         conn.close()
-        
+
         logger.info(f"📞 Recorded call: {source} → {dest} ({call_type}) - Duration: {duration_int}s, Talk: {billsec_int}s, Status: {disposition}")
         
     except Exception as e:
