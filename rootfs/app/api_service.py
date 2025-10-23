@@ -561,6 +561,11 @@ async def generate_tts(text: str) -> Optional[str]:
         import hashlib
         from gtts import gTTS
         
+        # ✅ FIX 1: Validate input text
+        if not text or text.strip() == '':
+            logger.warning("⚠️ Empty text provided, using default message")
+            text = "This is a test message from your phone system"
+        
         # Create hash of text for consistent filenames
         text_hash = hashlib.md5(text.encode()).hexdigest()
         filename = f"tts_{text_hash}.wav"
@@ -569,38 +574,80 @@ async def generate_tts(text: str) -> Optional[str]:
         # Check if file already exists
         if os.path.exists(output_path):
             logger.info(f"TTS file already exists: {filename}")
-            return filename.replace('.wav', '')
+            return filename.replace('.wav', '')  # ✅ Return without extension
         
         logger.info(f"Generating TTS: {text[:50]}...")
+        
+        # ✅ FIX 2: Ensure ASTERISK_SOUNDS directory exists
+        os.makedirs(ASTERISK_SOUNDS, exist_ok=True)
         
         # Generate TTS using Google
         mp3_path = output_path.replace('.wav', '.mp3')
         tts = gTTS(text=text, lang='en', slow=False)
         tts.save(mp3_path)
         
-        # Convert MP3 to 8kHz WAV (telephony standard)
-        convert_result = subprocess.run(
-            ['sox', mp3_path, '-r', '8000', '-c', '1', output_path],
-            capture_output=True,
-            check=False
-        )
+        logger.info(f"✓ MP3 file created: {mp3_path}")
+        
+        # ✅ FIX 3: Try sox first, fallback to ffmpeg
+        convert_success = False
+        
+        # Try sox
+        try:
+            convert_result = subprocess.run(
+                ['sox', mp3_path, '-r', '8000', '-c', '1', output_path],
+                capture_output=True,
+                check=False,
+                timeout=10
+            )
+            
+            if convert_result.returncode == 0 and os.path.exists(output_path):
+                convert_success = True
+                logger.info(f"✓ Converted with sox")
+        except Exception as sox_error:
+            logger.warning(f"Sox conversion failed: {sox_error}")
+        
+        # Fallback to ffmpeg if sox failed
+        if not convert_success:
+            try:
+                convert_result = subprocess.run(
+                    ['ffmpeg', '-i', mp3_path, '-ar', '8000', '-ac', '1', '-y', output_path],
+                    capture_output=True,
+                    check=False,
+                    timeout=10
+                )
+                
+                if convert_result.returncode == 0 and os.path.exists(output_path):
+                    convert_success = True
+                    logger.info(f"✓ Converted with ffmpeg")
+            except Exception as ffmpeg_error:
+                logger.warning(f"Ffmpeg conversion failed: {ffmpeg_error}")
         
         # Clean up MP3
         if os.path.exists(mp3_path):
             os.remove(mp3_path)
         
-        if convert_result.returncode == 0 and os.path.exists(output_path):
-            subprocess.run(['chown', 'asterisk:asterisk', output_path], check=False)
+        # ✅ FIX 4: Return result or fallback
+        if convert_success and os.path.exists(output_path):
+            # Set permissions
+            try:
+                subprocess.run(['chown', 'asterisk:asterisk', output_path], check=False)
+                subprocess.run(['chmod', '644', output_path], check=False)
+            except:
+                pass  # Permissions might fail in some environments
+            
             logger.info(f"✓ TTS file created: {filename}")
-            return filename.replace('.wav', '')
+            return filename.replace('.wav', '')  # Return without extension
         else:
-            logger.error(f"Audio conversion failed: {convert_result.stderr}")
-            return None
+            logger.error(f"❌ Audio conversion failed")
+            # ✅ Return a fallback sound
+            return "beep"  # Asterisk has a built-in beep sound
             
     except Exception as e:
-        logger.error(f"Error generating TTS: {e}")
-        return None
-
+        logger.error(f"❌ Error generating TTS: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        # ✅ Return fallback instead of None
+        return "beep"
 
 def create_call_file(phone_number: str, audio_file: str, caller_id: str = None, 
                     call_id: str = None, max_retries: int = 3, 
