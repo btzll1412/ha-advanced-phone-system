@@ -856,6 +856,7 @@ async def make_call(request: Request):
         data = await request.json()
         phone_number = data.get('phone_number', '')
         message = data.get('message', '')
+        custom_caller_id = data.get('caller_id', None)  # ✅ NEW: Get custom caller ID from request
         
         logger.info(f"📞 Call request: {phone_number}")
         
@@ -863,20 +864,48 @@ async def make_call(request: Request):
         direction, formatted_number = detect_call_type(phone_number)
         
         # Generate TTS
-        audio_file = generate_tts(message)  # Your existing function
+        audio_file = await generate_tts(message)
         call_id = str(uuid.uuid4())
         
-        # Get caller ID
-        caller_number = os.getenv('CALLER_NUMBER', '')
+        # ✅ FLEXIBLE CALLER ID LOGIC
+        # Priority: 1. Custom from request, 2. Environment, 3. Config file, 4. Fallback
+        if custom_caller_id:
+            # Use caller ID from API request
+            caller_number = custom_caller_id
+            logger.info(f"🆔 Using CUSTOM Caller ID from request: {caller_number}")
+        else:
+            # Use default from config
+            caller_number = os.getenv('CALLER_NUMBER', '')
+            
+            # If not in env, try to get from add-on config
+            if not caller_number:
+                try:
+                    import json
+                    with open('/data/options.json', 'r') as f:
+                        options = json.load(f)
+                        caller_number = options.get('sip_trunk', {}).get('caller_number', '')
+                except:
+                    pass
+            
+            logger.info(f"🆔 Using DEFAULT Caller ID from config: {caller_number}")
+        
+        # Ensure E.164 format
+        if caller_number and not caller_number.startswith('+'):
+            caller_number = f'+{caller_number}'
         
         # Build channel based on direction
         channel = get_channel_string(direction, formatted_number)
         
-        # Set caller ID
+        # ✅ Set caller ID
         if direction == CallDirection.INTERNAL:
-            callerid_line = f'CallerID: "System" <100>'
+            callerid_line = f'CallerID: "Internal" <100>'
         else:
-            callerid_line = f'CallerID: "{caller_number}" <{caller_number}>'
+            # For external calls, use the determined caller ID
+            if not caller_number:
+                logger.warning("⚠️ No caller ID configured! Using fallback")
+                caller_number = '+18455021412'  # Fallback - replace with your DID
+            
+            callerid_line = f'CallerID: {caller_number}'
         
         # Create call file
         call_file_content = f"""Channel: {channel}
@@ -892,10 +921,12 @@ Setvar: CALL_ID={call_id}
 Setvar: PHONE_NUMBER={formatted_number}
 Setvar: CALL_DIRECTION={direction}
 Setvar: PRE_MESSAGE_DELAY=1
+Setvar: CUSTOM_CALLERID={caller_number}
 """
         
         logger.info(f"📡 Channel: {channel}")
         logger.info(f"📍 Direction: {direction}")
+        logger.info(f"📞 Final Caller ID: {caller_number}")
         
         # Write call file
         temp_file = f"/tmp/{call_id}.call"
@@ -913,7 +944,8 @@ Setvar: PRE_MESSAGE_DELAY=1
             "status": "success",
             "call_id": call_id,
             "direction": direction,
-            "phone_number": formatted_number
+            "phone_number": formatted_number,
+            "caller_id": caller_number  # ✅ Return which caller ID was used
         }
         
     except ValueError as e:
