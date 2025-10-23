@@ -376,15 +376,26 @@ async def process_cdr_record(row):
         # ✅ FIX: Get correct phone number from call_history if this is an outbound call
         if context == "outbound-playback":
             # Try to find the call in call_history by looking for recent calls
-            # Match by approximate time and status (within last 60 seconds)
             try:
                 conn_temp = sqlite3.connect(DB_PATH)
                 c_temp = conn_temp.cursor()
+        
+                # First, let's see what's actually in the table
+                c_temp.execute('''
+                    SELECT call_id, phone_number, caller_id, status, started_at 
+                    FROM call_history 
+                    WHERE started_at >= datetime('now', '-120 seconds')
+                    ORDER BY started_at DESC
+                ''')
+                all_recent = c_temp.fetchall()
+                logger.info(f"🔍 Recent calls in call_history: {len(all_recent)} found")
+                for call in all_recent:
+                    logger.info(f"   - {call[0][:8]}... → {call[1]} (status: {call[3]}, time: {call[4]})")
+        
+                # Now try to get the most recent one
                 c_temp.execute('''
                     SELECT phone_number, caller_id 
                     FROM call_history 
-                    WHERE status IN ('initiated', 'ringing', 'answered', 'completed')
-                    AND started_at >= datetime('now', '-60 seconds')
                     ORDER BY started_at DESC
                     LIMIT 1
                 ''')
@@ -397,9 +408,11 @@ async def process_cdr_record(row):
                     source = "System"
                     logger.info(f"✅ Retrieved correct data from call_history: dest={dest}, caller_id={caller_id}")
                 else:
-                    logger.warning(f"⚠️ No recent call found in call_history, using CDR data")
+                    logger.warning(f"⚠️ No calls found in call_history at all!")
             except Exception as e:
                 logger.error(f"Error looking up call in call_history: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
 
         # Insert into database
         conn = sqlite3.connect(DB_PATH)
