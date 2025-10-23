@@ -375,15 +375,19 @@ async def process_cdr_record(row):
 
         # ✅ FIX: Get correct phone number from call_history if this is an outbound call
         if context == "outbound-playback":
-            # Try to find the call in call_history to get the correct destination
+            # Try to find the call in call_history by looking for recent calls
+            # Match by approximate time and status (within last 60 seconds)
             try:
                 conn_temp = sqlite3.connect(DB_PATH)
                 c_temp = conn_temp.cursor()
                 c_temp.execute('''
                     SELECT phone_number, caller_id 
                     FROM call_history 
-                    WHERE call_id = ?
-                ''', (uniqueid,))
+                    WHERE status IN ('initiated', 'ringing', 'answered', 'completed')
+                    AND started_at >= datetime('now', '-60 seconds')
+                    ORDER BY started_at DESC
+                    LIMIT 1
+                ''')
                 history_row = c_temp.fetchone()
                 conn_temp.close()
         
@@ -393,7 +397,7 @@ async def process_cdr_record(row):
                     source = "System"
                     logger.info(f"✅ Retrieved correct data from call_history: dest={dest}, caller_id={caller_id}")
                 else:
-                    logger.warning(f"⚠️ Call {uniqueid} not found in call_history, using CDR data")
+                    logger.warning(f"⚠️ No recent call found in call_history, using CDR data")
             except Exception as e:
                 logger.error(f"Error looking up call in call_history: {e}")
 
