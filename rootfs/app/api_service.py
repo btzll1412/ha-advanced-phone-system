@@ -702,6 +702,7 @@ def save_call_to_db(call_id: str, phone_number: str, audio_file: str,
                    broadcast_id: str = None):
     """Save call to database"""
     try:
+        logger.info(f"💾 Saving call to DB: {call_id} → {phone_number} (Caller: {caller_id})")  # ✅ ADD THIS
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute('''
@@ -711,6 +712,7 @@ def save_call_to_db(call_id: str, phone_number: str, audio_file: str,
         ''', (call_id, phone_number, 'outbound', 'initiated', audio_file, caller_id, group_name, broadcast_id))
         conn.commit()
         conn.close()
+        logger.info(f"✅ Call saved to database")  # ✅ ADD THIS
     except Exception as e:
         logger.error(f"Error saving call to DB: {e}")
 
