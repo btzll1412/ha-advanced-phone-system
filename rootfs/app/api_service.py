@@ -408,7 +408,8 @@ async def record_call_to_db(call_data: dict):
             """, (call_id, source, destination, duration, billsec, disposition, direction))
             await db.commit()
         
-        logger.info(f"📞 Recorded {direction.upper()} call: {source} → {destination} - {disposition}")
+        logger.info(f"📞 CDR Data - Source: {source}, Destination: {destination}, Direction: {direction}")  # ✅ ADD THIS
+        logger.info(f"📞 Recorded {direction.upper()} call: {source} → {destination} - {disposition}")  # ← ALREADY EXISTS
         
     except Exception as e:
         logger.error(f"Failed to record call: {e}")
