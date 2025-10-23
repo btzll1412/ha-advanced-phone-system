@@ -1002,13 +1002,23 @@ Setvar: CUSTOM_CALLERID={caller_number}
         os.rename(temp_file, final_file)
         
         logger.info(f"✅ Call initiated: {call_id}")
-        
+
+        # ✅ ADD THIS - Save call to database
+        save_call_to_db(
+            call_id=call_id,
+            phone_number=formatted_number,  # The number being called
+            audio_file=audio_file,
+            caller_id=caller_number,        # The caller ID being used
+            group_name=None,
+            broadcast_id=None
+        )
+
         return {
             "status": "success",
             "call_id": call_id,
             "direction": direction,
             "phone_number": formatted_number,
-            "caller_id": caller_number  # ✅ Return which caller ID was used
+            "caller_id": caller_number
         }
         
     except ValueError as e:
