@@ -275,6 +275,8 @@ async def process_cdr_record(row):
         clid = row[4]
         channel = row[5]
         dst_channel = row[6]
+        # DEBUG: Log the channel to see what we're working with
+        logger.info(f"🔍 DEBUG - channel: {channel}, context: {context}")
         lastapp = row[7]
         lastdata = row[8]
         start = row[9]
@@ -303,9 +305,12 @@ async def process_cdr_record(row):
         if context == "outbound-playback":
             call_type = "outbound"
             direction = "outbound"
+            logger.info(f"🔍 Processing outbound-playback: channel={channel}")
             # Extract actual destination from channel: SIP/trunk_main/18455021412
             if "trunk_main/" in channel:
+                logger.info(f"✅ Found trunk_main in channel!")
                 try:
+            # rest of code...
                     # Get the phone number after trunk_main/
                     actual_dest = channel.split("trunk_main/")[1].split("-")[0]
                     dest = actual_dest  # The number we called (18455021412)
