@@ -301,13 +301,23 @@ async def process_cdr_record(row):
         
         # Determine based on context
         if context == "outbound-playback":
-            call_type = "outbound"
-            direction = "outbound"
-            # For outbound-playback, source is the number being called
-            if source and source != "s":
-                actual_dest = source
-                source = "System"
-                dest = actual_dest
+    call_type = "outbound"
+    direction = "outbound"
+    # Extract actual destination from channel: SIP/trunk_main/18455021412
+    if "trunk_main/" in channel:
+        try:
+            # Get the phone number after trunk_main/
+            actual_dest = channel.split("trunk_main/")[1].split("-")[0]
+            dest = actual_dest  # The number we called (18455021412)
+            source = caller_id if caller_id else "System"  # Who made the call
+            logger.info(f"🔍 Extracted from channel: dest={dest}, source={source}, caller_id={caller_id}")
+        except Exception as e:
+            logger.error(f"Failed to parse channel: {channel}, error: {e}")
+    elif source and source != "s":
+        # Fallback to old method if channel doesn't have trunk_main
+        actual_dest = source
+        source = "System"
+        dest = actual_dest
         elif context == "internal":
             # Check if destination is an internal extension (3 digits starting with 1)
             if dest.startswith("1") and len(dest) == 3:
