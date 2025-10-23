@@ -381,7 +381,7 @@ async def process_cdr_record(row):
         logger.error(f"Row data: {row}")
 
 async def record_call_to_db(call_data: dict):
-    """Record call with direction tracking"""
+    """Record call with direction tracking - FIXED to match actual schema"""
     try:
         call_id = call_data.get('UniqueID', str(uuid.uuid4()))
         source = call_data.get('Source', 'Unknown')
@@ -389,30 +389,53 @@ async def record_call_to_db(call_data: dict):
         duration = call_data.get('Duration', 0)
         billsec = call_data.get('BillableSeconds', 0)
         disposition = call_data.get('Disposition', 'UNKNOWN')
-        direction = call_data.get('Direction', 'unknown')  # ✅ NEW
+        direction = call_data.get('Direction', 'unknown')
         
-        # ✅ Auto-detect direction if not provided
+        # Auto-detect direction if not provided
         if direction == 'unknown':
             if len(destination.replace('+', '')) <= 4:
                 direction = 'internal'
-            elif source.startswith('PJSIP/trunk'):
+            elif source.startswith('PJSIP/trunk') or source.startswith('SIP/trunk'):
                 direction = 'inbound'
             else:
                 direction = 'outbound'
         
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("""
-                INSERT INTO call_history 
-                (call_id, source, destination, duration, billsec, disposition, direction, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-            """, (call_id, source, destination, duration, billsec, disposition, direction))
-            await db.commit()
+        logger.info(f"📞 CDR Data - Source: {source}, Destination: {destination}, Direction: {direction}, Duration: {duration}s")
         
-        logger.info(f"📞 CDR Data - Source: {source}, Destination: {destination}, Direction: {direction}")  # ✅ ADD THIS
-        logger.info(f"📞 Recorded {direction.upper()} call: {source} → {destination} - {disposition}")  # ← ALREADY EXISTS
+        # ✅ Use correct column names that match the actual database schema
+        async with aiosqlite.connect(DB_PATH) as db:
+            # Check if call already exists (from initial save_call_to_db)
+            cursor = await db.execute(
+                "SELECT id FROM call_history WHERE call_id = ?", 
+                (call_id,)
+            )
+            existing = await cursor.fetchone()
+            
+            if existing:
+                # Update existing call with CDR data (duration and final status)
+                await db.execute("""
+                    UPDATE call_history 
+                    SET duration = ?, status = ?, ended_at = CURRENT_TIMESTAMP
+                    WHERE call_id = ?
+                """, (duration, disposition.lower(), call_id))
+                logger.info(f"✅ Updated call {call_id}: Duration={duration}s, Status={disposition}")
+            else:
+                # Call doesn't exist yet - shouldn't happen, but handle it
+                logger.warning(f"⚠️ Call {call_id} not in DB yet, inserting from CDR")
+                await db.execute("""
+                    INSERT INTO call_history 
+                    (call_id, phone_number, direction, status, duration)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (call_id, destination, direction, disposition.lower(), duration))
+                logger.info(f"📞 Inserted call {call_id} from CDR")
+            
+            await db.commit()
         
     except Exception as e:
         logger.error(f"Failed to record call: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+
 
 def migrate_database():
     """Migrate database to add contact names"""
