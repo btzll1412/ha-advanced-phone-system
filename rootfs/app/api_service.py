@@ -902,17 +902,33 @@ async def make_call(request: Request):
     try:
         data = await request.json()
         phone_number = data.get('phone_number', '')
-        message = data.get('message', '')
-        custom_caller_id = data.get('caller_id', None)  # ✅ NEW: Get custom caller ID from request
+        message = data.get('message', '')  # Might be empty!
+        custom_caller_id = data.get('caller_id', None)
         
         logger.info(f"📞 Call request: {phone_number}")
+        
+        # ✅ Validate and provide default message
+        if not message or message.strip() == '':
+            message = "This is a test call from your phone system"
+            logger.warning(f"⚠️ No message provided, using default")
+        
+        logger.info(f"📝 Message: {message[:100]}")
         
         # Detect call type
         direction, formatted_number = detect_call_type(phone_number)
         
         # Generate TTS
         audio_file = await generate_tts(message)
+        
+        # ✅ Validate audio file
+        if not audio_file:
+            logger.error("❌ TTS returned None, using beep")
+            audio_file = "beep"
+        
+        logger.info(f"🔊 Using audio file: {audio_file}")
+        
         call_id = str(uuid.uuid4())
+        
         
         # ✅ FLEXIBLE CALLER ID LOGIC
         # Priority: 1. Custom from request, 2. Environment, 3. Config file, 4. Fallback
