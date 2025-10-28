@@ -986,7 +986,7 @@ async def make_call(request: Request):
     try:
         data = await request.json()
         phone_number = data.get('phone_number', '')
-        message = data.get('message', '')  # Might be empty!
+        message = data.get('message') or data.get('tts_text', '')  # Might be empty!
         custom_caller_id = data.get('caller_id', None)
         
         logger.info(f"📞 Call request: {phone_number}")
