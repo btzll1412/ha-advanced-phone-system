@@ -485,16 +485,20 @@ def update_call_history_from_cdr(phone_number: str, duration: int, billsec: int,
 
         # Find and update the most recent matching call in call_history
         # Match by phone number and status being 'initiated', 'ringing', or 'answered'
+        # Use subquery since SQLite doesn't support ORDER BY/LIMIT in UPDATE
         cursor.execute('''
             UPDATE call_history
             SET status = ?,
                 is_voicemail = ?,
                 duration = ?,
                 ended_at = CURRENT_TIMESTAMP
-            WHERE phone_number LIKE ?
-              AND status IN ('initiated', 'ringing', 'answered')
-            ORDER BY started_at DESC
-            LIMIT 1
+            WHERE id = (
+                SELECT id FROM call_history
+                WHERE phone_number LIKE ?
+                  AND status IN ('initiated', 'ringing', 'answered', 'hangup')
+                ORDER BY started_at DESC
+                LIMIT 1
+            )
         ''', (status, is_voicemail, duration, f'%{phone_number[-10:]}%'))
 
         rows_updated = cursor.rowcount
@@ -632,10 +636,11 @@ async def run_scheduler():
                             payload["message"] = message
 
                         # Make internal API call for broadcast
+                        # Longer timeout to allow for TTS generation
                         response = requests.post(
                             "http://localhost:8088/api/broadcast",
                             json=payload,
-                            timeout=30
+                            timeout=120
                         )
                     else:
                         # Single call
@@ -650,10 +655,11 @@ async def run_scheduler():
                         elif message:
                             payload["message"] = message
 
+                        # Longer timeout to allow for TTS generation
                         response = requests.post(
                             "http://localhost:8088/api/call",
                             json=payload,
-                            timeout=30
+                            timeout=120
                         )
 
                     if response.status_code == 200:
