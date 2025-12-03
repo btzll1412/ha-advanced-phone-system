@@ -422,6 +422,7 @@
             <button class="tab" onclick="showTab('broadcast')">Broadcasts</button>
             <button class="tab" onclick="showTab('groups')">Contact Groups</button>
             <button class="tab" onclick="showTab('history')">Call History</button>
+            <button class="tab" onclick="showTab('settings')">⚙️ Settings</button>
         </div>
 
         <!-- Dashboard Tab -->
@@ -486,7 +487,13 @@
 
                 <div class="form-group">
                     <label>Caller ID</label>
-                    <input type="text" id="call-caller-id" placeholder="Home Assistant">
+                    <select id="call-caller-id-select" onchange="handleCallerIdChange('call-caller-id-select', 'call-caller-id-custom')">
+                        <option value="">-- Select a DID or enter custom --</option>
+                        <option value="custom">➕ Custom Caller ID...</option>
+                    </select>
+                    <input type="text" id="call-caller-id-custom" placeholder="Enter custom caller ID"
+                           style="display: none; margin-top: 8px;">
+                    <small style="color: #666;">Configure DIDs in Settings tab</small>
                 </div>
 
                 <div class="form-group">
@@ -635,7 +642,13 @@
 
                     <div class="form-group">
                         <label>Caller ID</label>
-                        <input type="text" id="broadcast-caller-id" placeholder="Emergency Services">
+                        <select id="broadcast-caller-id-select" onchange="handleCallerIdChange('broadcast-caller-id-select', 'broadcast-caller-id-custom')">
+                            <option value="">-- Select a DID or enter custom --</option>
+                            <option value="custom">➕ Custom Caller ID...</option>
+                        </select>
+                        <input type="text" id="broadcast-caller-id-custom" placeholder="Enter custom caller ID"
+                               style="display: none; margin-top: 8px;">
+                        <small style="color: #666;">Configure DIDs in Settings tab</small>
                     </div>
 
                     <div class="form-group">
@@ -655,11 +668,45 @@
                         <small style="color: #666;">How long to wait for answer before giving up</small>
                     </div>
 
-                    <button type="submit" class="btn">Start Broadcast</button>
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                            <input type="checkbox" id="broadcast-schedule-enabled" onchange="toggleBroadcastScheduleFields()" style="width: auto;">
+                            <span>Schedule for Later</span>
+                        </label>
+                    </div>
+
+                    <div id="broadcast-schedule-fields" class="hidden" style="background: #e8f5e9; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                        <div class="form-group">
+                            <label>Schedule Name *</label>
+                            <input type="text" id="broadcast-schedule-name" placeholder="e.g., Daily Announcement">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Date & Time *</label>
+                            <input type="datetime-local" id="broadcast-schedule-time">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Repeat</label>
+                            <select id="broadcast-repeat-type">
+                                <option value="none">One Time Only</option>
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="monthly">Monthly</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn" id="broadcast-submit-btn">Start Broadcast</button>
                 </form>
             </div>
 
-            <h3 style="margin-bottom: 15px;">Broadcast History</h3>
+            <div style="margin-top: 30px; border-top: 1px solid #e0e0e0; padding-top: 20px;">
+                <h3 style="margin-bottom: 15px; color: #333;">Scheduled Broadcasts</h3>
+                <div id="scheduled-broadcasts-list"></div>
+            </div>
+
+            <h3 style="margin-bottom: 15px; margin-top: 30px;">Broadcast History</h3>
             <button class="btn btn-secondary" onclick="loadBroadcasts()" style="margin-bottom: 20px;">Refresh</button>
             <div id="broadcasts-list"></div>
         </div>
@@ -857,6 +904,96 @@
                 </div>
             </div>
         </div>
+
+        <!-- Settings Tab -->
+        <div id="settings-tab" class="content hidden">
+            <h2 style="margin-bottom: 20px; color: #333;">⚙️ System Settings</h2>
+
+            <div id="settings-alert" class="alert" style="display: none;"></div>
+
+            <!-- Admin PIN Section -->
+            <div style="background: #f8f9fa; padding: 25px; border-radius: 10px; border-left: 4px solid #667eea; margin-bottom: 20px;">
+                <h3 style="margin-bottom: 15px; color: #333;">🔐 Admin PIN</h3>
+                <p style="color: #666; margin-bottom: 15px;">
+                    The admin PIN is used to access the broadcast menu when calling in from an external number.
+                    Press * during an inbound call to enter the admin PIN.
+                </p>
+
+                <div class="form-group" style="max-width: 300px;">
+                    <label for="admin-pin-input">Admin PIN (4 digits)</label>
+                    <input type="password" id="admin-pin-input" maxlength="4" pattern="[0-9]{4}"
+                           placeholder="Enter 4-digit PIN" style="font-size: 18px; letter-spacing: 5px; text-align: center;">
+                </div>
+
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button onclick="togglePinVisibility()" class="btn btn-secondary btn-small">
+                        👁️ Show/Hide
+                    </button>
+                    <button onclick="saveAdminPin()" class="btn btn-small">
+                        💾 Save PIN
+                    </button>
+                </div>
+            </div>
+
+            <!-- DID Management Section -->
+            <div style="background: #f8f9fa; padding: 25px; border-radius: 10px; border-left: 4px solid #28a745; margin-bottom: 20px;">
+                <h3 style="margin-bottom: 15px; color: #333;">📞 DID Management (Caller IDs)</h3>
+                <p style="color: #666; margin-bottom: 15px;">
+                    Manage your Direct Inward Dialing (DID) numbers. These are the phone numbers you can use as caller ID
+                    when sending broadcasts or making calls. The default DID will be pre-selected in dropdowns.
+                </p>
+
+                <!-- Add New DID Form -->
+                <div style="background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <h4 style="margin-bottom: 10px; color: #333;">Add New DID</h4>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 10px;">
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; font-weight: 500;">Phone Number *</label>
+                            <input type="tel" id="new-did-number" placeholder="e.g., 8455551234"
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; font-weight: 500;">Name (optional)</label>
+                            <input type="text" id="new-did-name" placeholder="e.g., Main Line"
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; font-weight: 500;">Description (optional)</label>
+                            <input type="text" id="new-did-description" placeholder="e.g., Primary broadcast number"
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                            <input type="checkbox" id="new-did-default"> Set as default
+                        </label>
+                        <button onclick="addDid()" class="btn btn-small">➕ Add DID</button>
+                    </div>
+                </div>
+
+                <!-- DID List -->
+                <div id="did-list" style="background: white; border-radius: 8px; overflow: hidden;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead style="background: #f8f9fa;">
+                            <tr>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Phone Number</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Name</th>
+                                <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Description</th>
+                                <th style="padding: 12px; text-align: center; border-bottom: 2px solid #dee2e6;">Default</th>
+                                <th style="padding: 12px; text-align: center; border-bottom: 2px solid #dee2e6;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="did-table-body">
+                            <tr>
+                                <td colspan="5" style="padding: 20px; text-align: center; color: #6c757d;">
+                                    Loading DIDs...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -876,15 +1013,19 @@
             if (tabName === 'make-call') {
                 loadRecordingsForSelect('call-recording-select');
                 loadScheduledCalls();
+                loadDids();
             }
             if (tabName === 'recordings') loadRecordings();
             if (tabName === 'broadcast') {
                 loadBroadcasts();
                 loadRecordingsForSelect('broadcast-recording-select');
                 loadGroupsForSelect();
+                loadScheduledBroadcasts();
+                loadDids();
             }
             if (tabName === 'groups') loadGroups();
             if (tabName === 'history') loadCallRecords();
+            if (tabName === 'settings') loadSettings();
         }
 
         // Toggle functions
@@ -1194,7 +1335,7 @@
             }
         }
 
-        // Toggle schedule fields
+        // Toggle schedule fields for calls
         function toggleScheduleFields() {
             const enabled = document.getElementById('call-schedule-enabled').checked;
             document.getElementById('schedule-fields').classList.toggle('hidden', !enabled);
@@ -1206,6 +1347,21 @@
                 now.setHours(now.getHours() + 1);
                 now.setMinutes(0);
                 document.getElementById('call-schedule-time').value = now.toISOString().slice(0, 16);
+            }
+        }
+
+        // Toggle schedule fields for broadcasts
+        function toggleBroadcastScheduleFields() {
+            const enabled = document.getElementById('broadcast-schedule-enabled').checked;
+            document.getElementById('broadcast-schedule-fields').classList.toggle('hidden', !enabled);
+            document.getElementById('broadcast-submit-btn').textContent = enabled ? 'Schedule Broadcast' : 'Start Broadcast';
+
+            // Set default datetime to now + 1 hour
+            if (enabled && !document.getElementById('broadcast-schedule-time').value) {
+                const now = new Date();
+                now.setHours(now.getHours() + 1);
+                now.setMinutes(0);
+                document.getElementById('broadcast-schedule-time').value = now.toISOString().slice(0, 16);
             }
         }
 
@@ -1276,6 +1432,87 @@
             }
         }
 
+        // Load scheduled broadcasts
+        async function loadScheduledBroadcasts() {
+            const list = document.getElementById('scheduled-broadcasts-list');
+            try {
+                const response = await fetch(`${API_URL}/api/scheduled?is_broadcast=true`);
+                const data = await response.json();
+
+                // Filter for broadcasts only
+                const broadcasts = data.scheduled.filter(s => s.is_broadcast === 1 || s.is_broadcast === true);
+
+                if (broadcasts.length === 0) {
+                    list.innerHTML = '<p style="color: #666;">No scheduled broadcasts</p>';
+                    return;
+                }
+
+                list.innerHTML = broadcasts.map(schedule => {
+                    const statusColors = {
+                        'pending': '#28a745',
+                        'completed': '#6c757d',
+                        'failed': '#dc3545'
+                    };
+                    const statusColor = statusColors[schedule.status] || '#ffc107';
+                    const scheduledDate = new Date(schedule.scheduled_time).toLocaleString();
+
+                    // Parse phone numbers if it's JSON
+                    let recipients = schedule.group_name || 'No recipients';
+                    if (schedule.phone_number) {
+                        try {
+                            const phones = JSON.parse(schedule.phone_number);
+                            recipients = Array.isArray(phones) ? `${phones.length} numbers` : schedule.phone_number;
+                        } catch {
+                            recipients = schedule.phone_number;
+                        }
+                    }
+
+                    return `
+                        <div class="call-history-item" style="display: flex; justify-content: space-between; align-items: center; padding: 15px; margin-bottom: 10px; background: #e8f5e9; border-radius: 8px; border-left: 4px solid ${statusColor};">
+                            <div>
+                                <div style="font-weight: 600; color: #333;">📢 ${schedule.name}</div>
+                                <div style="font-size: 14px; color: #666;">
+                                    ${recipients}
+                                    &bull; ${scheduledDate}
+                                    ${schedule.repeat_type !== 'none' ? `&bull; Repeats ${schedule.repeat_type}` : ''}
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 10px;">
+                                <button class="btn btn-small ${schedule.enabled ? 'btn-secondary' : ''}"
+                                        onclick="toggleBroadcastSchedule(${schedule.id})"
+                                        title="${schedule.enabled ? 'Disable' : 'Enable'}">
+                                    ${schedule.enabled ? 'Enabled' : 'Disabled'}
+                                </button>
+                                <button class="btn btn-small btn-danger" onclick="deleteBroadcastSchedule(${schedule.id})">Delete</button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                list.innerHTML = '<p style="color: #dc3545;">Error loading scheduled broadcasts</p>';
+            }
+        }
+
+        async function toggleBroadcastSchedule(id) {
+            try {
+                await fetch(`${API_URL}/api/scheduled/${id}/toggle`, { method: 'POST' });
+                loadScheduledBroadcasts();
+            } catch (error) {
+                showAlert('broadcast-alert', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function deleteBroadcastSchedule(id) {
+            if (!confirm('Delete this scheduled broadcast?')) return;
+            try {
+                await fetch(`${API_URL}/api/scheduled/${id}`, { method: 'DELETE' });
+                loadScheduledBroadcasts();
+                showAlert('broadcast-alert', 'Scheduled broadcast deleted', 'success');
+            } catch (error) {
+                showAlert('broadcast-alert', `Error: ${error.message}`, 'error');
+            }
+        }
+
         // Make Call Form
         document.getElementById('call-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -1296,7 +1533,7 @@
                 const data = {
                     name: scheduleName,
                     phone_number: document.getElementById('call-phone').value,
-                    caller_id: document.getElementById('call-caller-id').value || null,
+                    caller_id: getSelectedCallerId('call-caller-id-select', 'call-caller-id-custom') || null,
                     scheduled_time: scheduleTime,
                     repeat_type: document.getElementById('call-repeat-type').value
                 };
@@ -1331,7 +1568,7 @@
                 // Make immediate call
                 const data = {
                     phone_number: document.getElementById('call-phone').value,
-                    caller_id: document.getElementById('call-caller-id').value || null,
+                    caller_id: getSelectedCallerId('call-caller-id-select', 'call-caller-id-custom') || null,
                     max_retries: parseInt(document.getElementById('call-retries').value),
                     pre_message_delay: parseInt(document.getElementById('call-pre-delay').value),
                     max_ring_time: parseInt(document.getElementById('call-ring-time').value)
@@ -1425,11 +1662,12 @@
 
             const recipientType = document.getElementById('recipient-type').value;
             const type = document.getElementById('broadcast-message-type').value;
+            const isScheduled = document.getElementById('broadcast-schedule-enabled').checked;
 
             const data = {
                 name: document.getElementById('broadcast-name').value,
                 concurrent_calls: parseInt(document.getElementById('broadcast-concurrent').value),
-                caller_id: document.getElementById('broadcast-caller-id').value || null,
+                caller_id: getSelectedCallerId('broadcast-caller-id-select', 'broadcast-caller-id-custom') || null,
                 pre_message_delay: parseInt(document.getElementById('broadcast-pre-delay').value),
                 max_ring_time: parseInt(document.getElementById('broadcast-ring-time').value)
             };
@@ -1450,6 +1688,61 @@
                 data.recording_file = document.getElementById('broadcast-recording-select').value;
             }
 
+            // Handle scheduled broadcasts
+            if (isScheduled) {
+                const scheduleName = document.getElementById('broadcast-schedule-name').value;
+                const scheduleTime = document.getElementById('broadcast-schedule-time').value;
+                const repeatType = document.getElementById('broadcast-repeat-type').value;
+
+                if (!scheduleName || !scheduleTime) {
+                    showAlert('broadcast-alert', 'Please provide a schedule name and date/time', 'error');
+                    return;
+                }
+
+                // Create scheduled broadcast
+                const scheduleData = {
+                    name: scheduleName,
+                    phone_number: recipientType === 'manual' ? JSON.stringify(phoneNumbers) : null,
+                    group_name: recipientType === 'group' ? document.getElementById('group-select').value : null,
+                    message: data.name,
+                    tts_text: type === 'tts' ? document.getElementById('broadcast-tts').value : null,
+                    recording_file: type === 'recording' ? document.getElementById('broadcast-recording-select').value : null,
+                    caller_id: data.caller_id,
+                    scheduled_time: scheduleTime,
+                    repeat_type: repeatType,
+                    is_broadcast: true,
+                    concurrent_calls: data.concurrent_calls,
+                    pre_message_delay: data.pre_message_delay,
+                    max_ring_time: data.max_ring_time
+                };
+
+                try {
+                    const response = await fetch(`${API_URL}/api/scheduled_calls`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(scheduleData)
+                    });
+
+                    if (response.ok) {
+                        const result = await response.json();
+                        showAlert('broadcast-alert', `Broadcast scheduled successfully! ID: ${result.id}`, 'success');
+                        e.target.reset();
+                        phoneNumbers = [];
+                        updatePhoneList();
+                        document.getElementById('broadcast-schedule-enabled').checked = false;
+                        toggleBroadcastScheduleFields();
+                        loadScheduledBroadcasts();
+                    } else {
+                        const error = await response.json();
+                        showAlert('broadcast-alert', error.detail || 'Failed to schedule broadcast', 'error');
+                    }
+                } catch (error) {
+                    showAlert('broadcast-alert', `Error: ${error.message}`, 'error');
+                }
+                return;
+            }
+
+            // Regular immediate broadcast
             try {
                 const response = await fetch(`${API_URL}/api/broadcast`, {
                     method: 'POST',
@@ -2346,6 +2639,255 @@ function exportGroupCSV(groupName) {
             alert(`Error exporting group: ${error.message}`);
         });
 }
+
+        // Settings functions
+        async function loadSettings() {
+            try {
+                const response = await fetch(`${API_URL}/api/settings/admin_pin`);
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('admin-pin-input').value = data.value || '';
+                }
+            } catch (error) {
+                console.error('Error loading settings:', error);
+            }
+            // Also load DIDs
+            loadDids();
+        }
+
+        async function saveAdminPin() {
+            const alertEl = document.getElementById('settings-alert');
+            const pinInput = document.getElementById('admin-pin-input');
+            const pin = pinInput.value.trim();
+
+            // Validate PIN
+            if (!/^\d{4}$/.test(pin)) {
+                alertEl.className = 'alert alert-error';
+                alertEl.textContent = 'PIN must be exactly 4 digits';
+                alertEl.style.display = 'block';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/api/settings/admin_pin`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: pin })
+                });
+
+                if (response.ok) {
+                    alertEl.className = 'alert alert-success';
+                    alertEl.textContent = 'Admin PIN saved successfully!';
+                    alertEl.style.display = 'block';
+                    setTimeout(() => { alertEl.style.display = 'none'; }, 3000);
+                } else {
+                    throw new Error('Failed to save PIN');
+                }
+            } catch (error) {
+                alertEl.className = 'alert alert-error';
+                alertEl.textContent = `Error saving PIN: ${error.message}`;
+                alertEl.style.display = 'block';
+            }
+        }
+
+        function togglePinVisibility() {
+            const pinInput = document.getElementById('admin-pin-input');
+            pinInput.type = pinInput.type === 'password' ? 'text' : 'password';
+        }
+
+        // DID Management functions
+        let systemDids = [];
+
+        async function loadDids() {
+            try {
+                const response = await fetch(`${API_URL}/api/dids`);
+                if (response.ok) {
+                    const data = await response.json();
+                    systemDids = data.dids || [];
+                    renderDidTable();
+                    // Also update any DID dropdowns on the page
+                    updateDidDropdowns();
+                }
+            } catch (error) {
+                console.error('Error loading DIDs:', error);
+            }
+        }
+
+        function renderDidTable() {
+            const tbody = document.getElementById('did-table-body');
+            if (!tbody) return;
+
+            if (systemDids.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" style="padding: 20px; text-align: center; color: #6c757d;">
+                            No DIDs configured. Add your first DID above.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = systemDids.map(did => `
+                <tr>
+                    <td style="padding: 10px; border-bottom: 1px solid #dee2e6; font-family: monospace;">
+                        ${did.phone_number}
+                    </td>
+                    <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">
+                        ${did.name || '<span style="color: #999;">-</span>'}
+                    </td>
+                    <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">
+                        ${did.description || '<span style="color: #999;">-</span>'}
+                    </td>
+                    <td style="padding: 10px; border-bottom: 1px solid #dee2e6; text-align: center;">
+                        ${did.is_default
+                            ? '<span style="color: #28a745; font-weight: bold;">✓ Default</span>'
+                            : `<button onclick="setDefaultDid(${did.id})" class="btn btn-secondary btn-small">Set Default</button>`}
+                    </td>
+                    <td style="padding: 10px; border-bottom: 1px solid #dee2e6; text-align: center;">
+                        <button onclick="deleteDid(${did.id}, '${did.phone_number}')" class="btn btn-danger btn-small">🗑️ Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function addDid() {
+            const phoneNumber = document.getElementById('new-did-number').value.trim();
+            const name = document.getElementById('new-did-name').value.trim();
+            const description = document.getElementById('new-did-description').value.trim();
+            const isDefault = document.getElementById('new-did-default').checked;
+
+            if (!phoneNumber) {
+                alert('Phone number is required');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/api/dids`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        phone_number: phoneNumber,
+                        name: name,
+                        description: description,
+                        is_default: isDefault
+                    })
+                });
+
+                if (response.ok) {
+                    // Clear form
+                    document.getElementById('new-did-number').value = '';
+                    document.getElementById('new-did-name').value = '';
+                    document.getElementById('new-did-description').value = '';
+                    document.getElementById('new-did-default').checked = false;
+                    // Reload DIDs
+                    loadDids();
+                } else {
+                    const error = await response.json();
+                    alert(error.detail || 'Failed to add DID');
+                }
+            } catch (error) {
+                alert(`Error adding DID: ${error.message}`);
+            }
+        }
+
+        async function deleteDid(didId, phoneNumber) {
+            if (!confirm(`Are you sure you want to delete DID ${phoneNumber}?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/api/dids/${didId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    loadDids();
+                } else {
+                    const error = await response.json();
+                    alert(error.detail || 'Failed to delete DID');
+                }
+            } catch (error) {
+                alert(`Error deleting DID: ${error.message}`);
+            }
+        }
+
+        async function setDefaultDid(didId) {
+            try {
+                const response = await fetch(`${API_URL}/api/dids/${didId}/set-default`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    loadDids();
+                } else {
+                    const error = await response.json();
+                    alert(error.detail || 'Failed to set default DID');
+                }
+            } catch (error) {
+                alert(`Error setting default DID: ${error.message}`);
+            }
+        }
+
+        function updateDidDropdowns() {
+            // Update caller ID dropdowns in Make Call and Broadcast sections
+            const dropdowns = ['call-caller-id-select', 'broadcast-caller-id-select'];
+
+            dropdowns.forEach(dropdownId => {
+                const dropdown = document.getElementById(dropdownId);
+                if (!dropdown) return;
+
+                // Save current value
+                const currentValue = dropdown.value;
+
+                // Clear and rebuild options
+                dropdown.innerHTML = '';
+
+                // Add DID options
+                systemDids.forEach(did => {
+                    const option = document.createElement('option');
+                    option.value = did.phone_number;
+                    option.textContent = did.name ? `${did.phone_number} (${did.name})` : did.phone_number;
+                    if (did.is_default) {
+                        option.selected = true;
+                    }
+                    dropdown.appendChild(option);
+                });
+
+                // Add custom option
+                const customOption = document.createElement('option');
+                customOption.value = 'custom';
+                customOption.textContent = '➕ Custom Caller ID...';
+                dropdown.appendChild(customOption);
+
+                // Restore value if it was custom or still exists
+                if (currentValue === 'custom' || systemDids.some(d => d.phone_number === currentValue)) {
+                    dropdown.value = currentValue;
+                }
+            });
+        }
+
+        function handleCallerIdChange(selectId, customInputId) {
+            const select = document.getElementById(selectId);
+            const customInput = document.getElementById(customInputId);
+
+            if (select.value === 'custom') {
+                customInput.style.display = 'block';
+                customInput.required = true;
+            } else {
+                customInput.style.display = 'none';
+                customInput.required = false;
+            }
+        }
+
+        function getSelectedCallerId(selectId, customInputId) {
+            const select = document.getElementById(selectId);
+            if (select.value === 'custom') {
+                return document.getElementById(customInputId).value.trim();
+            }
+            return select.value;
+        }
+
         setInterval(() => {
             if (document.querySelector('.tab.active')?.textContent.trim() === 'Call History') {
                 loadCallRecords();
