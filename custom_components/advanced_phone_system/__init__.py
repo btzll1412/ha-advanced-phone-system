@@ -54,9 +54,15 @@ TTS_CALL_SCHEMA = vol.Schema({
     vol.Optional("max_retries", default=3): cv.positive_int,
 })
 
+CONTACT_SCHEMA = vol.Schema({
+    vol.Required("name"): cv.string,
+    vol.Required("phone_number"): cv.string,
+})
+
 GROUP_SCHEMA = vol.Schema({
     vol.Required("name"): cv.string,
-    vol.Required("phone_numbers"): vol.All(cv.ensure_list, [cv.string]),
+    vol.Optional("contacts"): vol.All(cv.ensure_list, [CONTACT_SCHEMA]),
+    vol.Optional("phone_numbers"): vol.All(cv.ensure_list, [cv.string]),  # Legacy support
     vol.Optional("caller_id"): cv.string,
 })
 
@@ -128,12 +134,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             "name": name,
             "concurrent_calls": concurrent_calls
         }
-        
+
         if phone_numbers:
             payload["phone_numbers"] = phone_numbers
         if group_name:
             payload["group_name"] = group_name
-        
+        if caller_id:
+            payload["caller_id"] = caller_id
+
         if tts_text:
             payload["tts_text"] = tts_text
         elif recording_file:
@@ -197,15 +205,29 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async def create_group(call: ServiceCall) -> None:
         """Create a contact group."""
         name = call.data.get("name")
-        phone_numbers = call.data.get("phone_numbers")
+        contacts = call.data.get("contacts")
+        phone_numbers = call.data.get("phone_numbers")  # Legacy support
         caller_id = call.data.get("caller_id")
-        
+
+        # Build contacts list - support both new format and legacy format
+        contact_list = []
+        if contacts:
+            # New format: list of {name, phone_number}
+            contact_list = contacts
+        elif phone_numbers:
+            # Legacy format: convert phone_numbers list to contacts
+            for i, phone in enumerate(phone_numbers):
+                contact_list.append({
+                    "name": f"Contact {i+1}",
+                    "phone_number": phone
+                })
+
         payload = {
             "name": name,
-            "phone_numbers": phone_numbers,
+            "contacts": contact_list,
             "caller_id": caller_id
         }
-        
+
         try:
             response = await hass.async_add_executor_job(
                 lambda: requests.post(f"{api_url}/api/groups", json=payload, timeout=10)

@@ -3,31 +3,26 @@
 Advanced Phone System - Main API Service
 Handles calls, broadcasts, and Home Assistant integration
 """
-import csv
-from datetime import datetime
-from typing import List, Dict
 import asyncio
-import os
+import csv
+import hashlib
 import json
-import uuid
 import logging
+import os
 import sqlite3
 import subprocess
+import uuid
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import List, Dict, Optional
+
+import aiofiles
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-import aiofiles
-import pwd
-import grp
-import hashlib
 from gtts import gTTS
-
-from enum import Enum
+from pydantic import BaseModel
 
 class CallDirection(str, Enum):
     INTERNAL = "internal"
@@ -66,13 +61,13 @@ def detect_call_type(number: str) -> tuple:
 
 
 def get_channel_string(direction: CallDirection, number: str) -> str:
-    """Generate Asterisk channel string"""
+    """Generate Asterisk channel string for chan_sip"""
     if direction == CallDirection.INTERNAL:
-        return f"PJSIP/{number}"
+        return f"SIP/{number}"
     else:
         # Remove + for trunk routing
         clean = number.lstrip('+')
-        return f"PJSIP/{clean}@trunk_main"
+        return f"SIP/trunk_main/{clean}"
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -350,9 +345,9 @@ async def process_cdr_record(row):
         if "SIP/" in dst_channel:
             try:
                 extension = dst_channel.split("/")[1].split("-")[0]
-            except:
+            except (IndexError, AttributeError):
                 pass
-        
+
         # Parse extension from channel if not found
         if not extension and "SIP/" in channel:
             try:
@@ -361,15 +356,14 @@ async def process_cdr_record(row):
                 if not (extension.startswith("1") and len(extension) == 3):
                     if extension == "trunk_main":
                         extension = None  # This is the trunk, not an extension
-            except:
+            except (IndexError, AttributeError):
                 pass
-        
-        # Convert to integers
+
         # Convert to integers
         try:
             duration_int = int(float(duration))
             billsec_int = int(float(billsec))
-        except:
+        except (ValueError, TypeError):
             duration_int = 0
             billsec_int = 0
 
@@ -433,66 +427,68 @@ async def process_cdr_record(row):
         conn.close()
 
         logger.info(f"📞 Recorded call: {source} → {dest} ({call_type}) - Duration: {duration_int}s, Talk: {billsec_int}s, Status: {disposition}")
-        
+
+        # Update call_history status for outbound calls
+        if context == "outbound-playback" and dest:
+            update_call_history_from_cdr(dest, duration_int, billsec_int, disposition)
+
     except Exception as e:
         logger.error(f"Error processing CDR: {e}")
         logger.error(f"Row data: {row}")
 
-async def record_call_to_db(call_data: dict):
-    """Record call with direction tracking - FIXED to match actual schema"""
+
+def update_call_history_from_cdr(phone_number: str, duration: int, billsec: int, disposition: str):
+    """Update call_history status when a call completes based on CDR data"""
     try:
-        call_id = call_data.get('UniqueID', str(uuid.uuid4()))
-        source = call_data.get('Source', 'Unknown')
-        destination = call_data.get('Destination', 'Unknown')
-        duration = call_data.get('Duration', 0)
-        billsec = call_data.get('BillableSeconds', 0)
-        disposition = call_data.get('Disposition', 'UNKNOWN')
-        direction = call_data.get('Direction', 'unknown')
-        
-        # Auto-detect direction if not provided
-        if direction == 'unknown':
-            if len(destination.replace('+', '')) <= 4:
-                direction = 'internal'
-            elif source.startswith('PJSIP/trunk') or source.startswith('SIP/trunk'):
-                direction = 'inbound'
-            else:
-                direction = 'outbound'
-        
-        logger.info(f"📞 CDR Data - Source: {source}, Destination: {destination}, Direction: {direction}, Duration: {duration}s")
-        
-        # ✅ Use correct column names that match the actual database schema
-        async with aiosqlite.connect(DB_PATH) as db:
-            # Check if call already exists (from initial save_call_to_db)
-            cursor = await db.execute(
-                "SELECT id FROM call_history WHERE call_id = ?", 
-                (call_id,)
-            )
-            existing = await cursor.fetchone()
-            
-            if existing:
-                # Update existing call with CDR data (duration and final status)
-                await db.execute("""
-                    UPDATE call_history 
-                    SET duration = ?, status = ?, ended_at = CURRENT_TIMESTAMP
-                    WHERE call_id = ?
-                """, (duration, disposition.lower(), call_id))
-                logger.info(f"✅ Updated call {call_id}: Duration={duration}s, Status={disposition}")
-            else:
-                # Call doesn't exist yet - shouldn't happen, but handle it
-                logger.warning(f"⚠️ Call {call_id} not in DB yet, inserting from CDR")
-                await db.execute("""
-                    INSERT INTO call_history 
-                    (call_id, phone_number, direction, status, duration)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (call_id, destination, direction, disposition.lower(), duration))
-                logger.info(f"📞 Inserted call {call_id} from CDR")
-            
-            await db.commit()
-        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Determine voicemail status based on billable seconds
+        if billsec >= 3:
+            # Human answered and stayed on call
+            is_voicemail = 0
+            status = "completed"
+        elif billsec > 0 and billsec < 3:
+            # Quick hangup - likely declined
+            is_voicemail = 2
+            status = "completed"
+        elif billsec == 0 and duration > 0:
+            # No talk time but call connected - voicemail
+            is_voicemail = 1
+            status = "voicemail"
+        else:
+            # No answer
+            is_voicemail = None
+            status = "no_answer" if disposition == "NO ANSWER" else "failed"
+
+        # Find and update the most recent matching call in call_history
+        # Match by phone number and status being 'initiated', 'ringing', or 'answered'
+        cursor.execute('''
+            UPDATE call_history
+            SET status = ?,
+                is_voicemail = ?,
+                duration = ?,
+                ended_at = CURRENT_TIMESTAMP
+            WHERE phone_number LIKE ?
+              AND status IN ('initiated', 'ringing', 'answered')
+            ORDER BY started_at DESC
+            LIMIT 1
+        ''', (status, is_voicemail, duration, f'%{phone_number[-10:]}%'))
+
+        rows_updated = cursor.rowcount
+        conn.commit()
+        conn.close()
+
+        if rows_updated > 0:
+            logger.info(f"✅ Updated call_history for {phone_number}: status={status}, is_voicemail={is_voicemail}, duration={duration}s")
+        else:
+            logger.debug(f"No pending call found in call_history for {phone_number}")
+
+        return rows_updated > 0
+
     except Exception as e:
-        logger.error(f"Failed to record call: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
+        logger.error(f"Failed to update call_history: {e}")
+        return False
 
 
 def migrate_database():
@@ -531,16 +527,16 @@ async def startup_event():
     """Initialize on startup"""
     init_database()
     logger.info("✓ Database initialized")
-    
+
     migrate_database()
     logger.info("✓ Database migrated")
-    
-    migrate_database_v2()  # ← ADD THIS LINE
+
+    migrate_database_v2()
     logger.info("✓ Database migrated v2")
-    
+
     asyncio.create_task(monitor_cdr())
     logger.info("✓ CDR monitoring task started")
-    
+
     os.makedirs(RECORDINGS_PATH, exist_ok=True)
     os.makedirs(ASTERISK_SOUNDS, exist_ok=True)
     logger.info("✓ API Service started")
@@ -714,7 +710,7 @@ async def generate_tts(text: str) -> Optional[str]:
             try:
                 subprocess.run(['chown', 'asterisk:asterisk', output_path], check=False)
                 subprocess.run(['chmod', '644', output_path], check=False)
-            except:
+            except (OSError, subprocess.SubprocessError):
                 pass  # Permissions might fail in some environments
             
             logger.info(f"✓ TTS file created: {filename}")
@@ -913,74 +909,12 @@ async def process_broadcast(broadcast_id: str, request: BroadcastRequest):
 # API ENDPOINTS
 # ============================================================================
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize on startup"""
-    init_database()
-    logger.info("✓ Database initialized")
-    
-    migrate_database()
-    logger.info("✓ Database migrated")
-    
-    asyncio.create_task(monitor_cdr())
-    logger.info("✓ CDR monitoring task started")
-    
-    os.makedirs(RECORDINGS_PATH, exist_ok=True)
-    os.makedirs(ASTERISK_SOUNDS, exist_ok=True)
-    logger.info("✓ API Service started")
-
-
 @app.get("/health")
 async def health():
     """Health check endpoint"""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
-import re
-from enum import Enum
 
-class CallDirection(str, Enum):
-    INTERNAL = "internal"
-    OUTBOUND = "outbound"
-    INBOUND = "inbound"
-
-
-def detect_call_type(number: str) -> tuple:
-    """Detect if number is internal or external"""
-    digits = ''.join(filter(str.isdigit, number))
-    
-    # Internal: 3-4 digits
-    if len(digits) <= 4:
-        logger.info(f"🏠 INTERNAL call to extension: {digits}")
-        return (CallDirection.INTERNAL, digits)
-    
-    # External: 10+ digits
-    elif len(digits) >= 10:
-        if len(digits) == 10:
-            formatted = f'+1{digits}'
-        elif len(digits) == 11:
-            formatted = f'+{digits}'
-        else:
-            formatted = f'+{digits}'
-        
-        logger.info(f"📤 OUTBOUND call to: {formatted}")
-        return (CallDirection.OUTBOUND, formatted)
-    
-    else:
-        raise ValueError(f"Invalid number: {number}")
-
-
-def get_channel_string(direction: CallDirection, number: str) -> str:
-    """Generate Asterisk channel string for chan_sip"""
-    if direction == CallDirection.INTERNAL:
-        # Internal: SIP/extension
-        return f"SIP/{number}"
-    else:
-        # External: SIP/trunk_main/number
-        clean = number.lstrip('+')
-        return f"SIP/trunk_main/{clean}"
-
-
-# Update your /api/call endpoint:
 @app.post("/api/call")
 async def make_call(request: Request):
     try:
@@ -1027,11 +961,10 @@ async def make_call(request: Request):
             # If not in env, try to get from add-on config
             if not caller_number:
                 try:
-                    import json
                     with open('/data/options.json', 'r') as f:
                         options = json.load(f)
                         caller_number = options.get('sip_trunk', {}).get('caller_number', '')
-                except:
+                except (FileNotFoundError, json.JSONDecodeError, KeyError):
                     pass
             
             logger.info(f"🆔 Using DEFAULT Caller ID from config: {caller_number}")
@@ -1043,16 +976,17 @@ async def make_call(request: Request):
         # Build channel based on direction
         channel = get_channel_string(direction, formatted_number)
         
-        # ✅ Set caller ID
+        # Set caller ID
         if direction == CallDirection.INTERNAL:
             callerid_line = f'CallerID: "Internal" <100>'
         else:
             # For external calls, use the determined caller ID
             if not caller_number:
-                logger.warning("⚠️ No caller ID configured! Using fallback")
-                caller_number = '+18455021412'  # Fallback - replace with your DID
-            
-            callerid_line = f'CallerID: {caller_number}'
+                logger.warning("⚠️ No caller ID configured! Calls may fail or show unknown caller.")
+                # Use a generic caller ID - trunk provider may override this
+                callerid_line = 'CallerID: "Phone System" <0000000000>'
+            else:
+                callerid_line = f'CallerID: {caller_number}'
         
         # Create call file
         call_file_content = f"""Channel: {channel}
@@ -1068,21 +1002,22 @@ Setvar: CALL_ID={call_id}
 Setvar: PHONE_NUMBER={formatted_number}
 Setvar: CALL_DIRECTION={direction}
 Setvar: PRE_MESSAGE_DELAY=1
-Setvar: CUSTOM_CALLERID={caller_number}
+Setvar: CUSTOM_CALLERID={caller_number or ''}
 """
-        
+
         logger.info(f"📡 Channel: {channel}")
         logger.info(f"📍 Direction: {direction}")
-        logger.info(f"📞 Final Caller ID: {caller_number}")
-        
+        logger.info(f"📞 Final Caller ID: {caller_number or 'Not configured'}")
+
         # Write call file
         temp_file = f"/tmp/{call_id}.call"
         final_file = f"/var/spool/asterisk/outgoing/{call_id}.call"
-        
+
         with open(temp_file, 'w') as f:
             f.write(call_file_content)
-        
-        os.chmod(temp_file, 0o777)
+
+        # Set permissions - asterisk needs to read this file
+        os.chmod(temp_file, 0o644)
         os.rename(temp_file, final_file)
         
         logger.info(f"✅ Call initiated: {call_id}")
@@ -1397,14 +1332,6 @@ async def get_call_history(limit: int = 50):
         logger.error(f"Error getting call history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-class ContactMember(BaseModel):
-    name: str
-    phone_number: str
-
-class ContactGroup(BaseModel):
-    name: str
-    contacts: List[ContactMember]  # Changed from phone_numbers
-    caller_id: Optional[str] = None
 
 @app.post("/api/groups")
 async def create_group(group: ContactGroup):
