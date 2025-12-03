@@ -29,6 +29,8 @@ RUN pip3 install --no-cache-dir \
 RUN mkdir -p /data/database \
     && mkdir -p /data/recordings \
     && mkdir -p /var/lib/asterisk/sounds/custom \
+    && mkdir -p /var/lib/asterisk/sounds/ivr \
+    && mkdir -p /var/lib/asterisk/agi-bin \
     && mkdir -p /var/spool/asterisk/outgoing \
     && chown -R asterisk:asterisk /var/lib/asterisk \
     && chown -R asterisk:asterisk /var/spool/asterisk
@@ -38,7 +40,8 @@ COPY rootfs /
 
 # Set execute permissions
 RUN chmod +x /etc/services.d/phone-system/run \
-    && chmod +x /etc/cont-init.d/*.sh
+    && chmod +x /etc/cont-init.d/*.sh \
+    && chmod +x /var/lib/asterisk/agi-bin/*.py 2>/dev/null || true
 
 # Expose ports
 EXPOSE 5060/tcp 5060/udp 8088/tcp
