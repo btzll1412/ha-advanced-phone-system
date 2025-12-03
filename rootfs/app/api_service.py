@@ -221,7 +221,11 @@ def init_database():
             last_run TEXT,
             next_run TEXT,
             status TEXT DEFAULT 'pending',
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            is_broadcast INTEGER DEFAULT 0,
+            concurrent_calls INTEGER DEFAULT 5,
+            pre_message_delay INTEGER DEFAULT 1,
+            max_ring_time INTEGER DEFAULT 45
         )
     ''')
 
@@ -450,8 +454,14 @@ async def process_cdr_record(row):
 
         logger.info(f"📞 Recorded call: {source} → {dest} ({call_type}) - Duration: {duration_int}s, Talk: {billsec_int}s, Status: {disposition}")
 
-        # Update call_history status for outbound calls
-        if context == "outbound-playback" and dest:
+        # Update call_history status for ALL outbound calls (not just outbound-playback)
+        # This catches calls regardless of their context, as long as they went through the trunk
+        is_outbound_trunk_call = "trunk_main" in channel
+        is_outbound_context = context in ("outbound-playback", "default", "internal", "from-asterisk")
+        is_outbound_number = dest and len(dest) >= 10 and dest.isdigit()
+
+        if is_outbound_trunk_call or (is_outbound_context and is_outbound_number):
+            logger.info(f"🔄 Updating call_history for outbound call to {dest}")
             update_call_history_from_cdr(dest, duration_int, billsec_int, disposition)
 
     except Exception as e:
@@ -459,11 +469,24 @@ async def process_cdr_record(row):
         logger.error(f"Row data: {row}")
 
 
+def normalize_phone_number(phone: str) -> str:
+    """Normalize phone number by removing non-digits and keeping last 10 digits"""
+    if not phone:
+        return ""
+    digits = ''.join(c for c in phone if c.isdigit())
+    # Return last 10 digits (or all if less than 10)
+    return digits[-10:] if len(digits) >= 10 else digits
+
+
 def update_call_history_from_cdr(phone_number: str, duration: int, billsec: int, disposition: str):
     """Update call_history status when a call completes based on CDR data"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+
+        # Normalize the phone number for matching
+        normalized_phone = normalize_phone_number(phone_number)
+        logger.info(f"🔍 Looking for call to update: original={phone_number}, normalized={normalized_phone}")
 
         # Determine voicemail status based on billable seconds
         if billsec >= 3:
@@ -483,8 +506,20 @@ def update_call_history_from_cdr(phone_number: str, duration: int, billsec: int,
             is_voicemail = None
             status = "no_answer" if disposition == "NO ANSWER" else "failed"
 
+        # First, find pending calls to see what we're working with
+        cursor.execute('''
+            SELECT id, phone_number, status, started_at FROM call_history
+            WHERE status IN ('initiated', 'ringing', 'answered', 'hangup')
+            ORDER BY started_at DESC
+            LIMIT 10
+        ''')
+        pending_calls = cursor.fetchall()
+        logger.info(f"🔍 Found {len(pending_calls)} pending calls in call_history")
+        for call in pending_calls:
+            logger.debug(f"   - ID: {call[0]}, Phone: {call[1]}, Status: {call[2]}, Started: {call[3]}")
+
         # Find and update the most recent matching call in call_history
-        # Match by phone number and status being 'initiated', 'ringing', or 'answered'
+        # Match by normalized phone number (last 10 digits)
         # Use subquery since SQLite doesn't support ORDER BY/LIMIT in UPDATE
         cursor.execute('''
             UPDATE call_history
@@ -494,12 +529,18 @@ def update_call_history_from_cdr(phone_number: str, duration: int, billsec: int,
                 ended_at = CURRENT_TIMESTAMP
             WHERE id = (
                 SELECT id FROM call_history
-                WHERE phone_number LIKE ?
-                  AND status IN ('initiated', 'ringing', 'answered', 'hangup')
+                WHERE (
+                    phone_number LIKE ?
+                    OR phone_number LIKE ?
+                    OR phone_number = ?
+                    OR SUBSTR(REPLACE(REPLACE(REPLACE(phone_number, '-', ''), ' ', ''), '(', ''), -10) = ?
+                )
+                AND status IN ('initiated', 'ringing', 'answered', 'hangup')
                 ORDER BY started_at DESC
                 LIMIT 1
             )
-        ''', (status, is_voicemail, duration, f'%{phone_number[-10:]}%'))
+        ''', (status, is_voicemail, duration,
+              f'%{normalized_phone}', f'%{normalized_phone}%', phone_number, normalized_phone))
 
         rows_updated = cursor.rowcount
         conn.commit()
@@ -508,12 +549,14 @@ def update_call_history_from_cdr(phone_number: str, duration: int, billsec: int,
         if rows_updated > 0:
             logger.info(f"✅ Updated call_history for {phone_number}: status={status}, is_voicemail={is_voicemail}, duration={duration}s")
         else:
-            logger.debug(f"No pending call found in call_history for {phone_number}")
+            logger.warning(f"⚠️ No pending call found in call_history for {phone_number} (normalized: {normalized_phone})")
 
         return rows_updated > 0
 
     except Exception as e:
         logger.error(f"Failed to update call_history: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return False
 
 
@@ -560,6 +603,9 @@ async def startup_event():
     migrate_database_v2()
     logger.info("✓ Database migrated v2")
 
+    migrate_database_v3()
+    logger.info("✓ Database migrated v3")
+
     asyncio.create_task(monitor_cdr())
     logger.info("✓ CDR monitoring task started")
 
@@ -591,9 +637,31 @@ def migrate_database_v2():
     conn.close()
 
 
+def migrate_database_v3():
+    """Add broadcast-related columns to scheduled_calls"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # Check if is_broadcast column exists
+    cursor.execute("PRAGMA table_info(scheduled_calls)")
+    columns = [column[1] for column in cursor.fetchall()]
+
+    if 'is_broadcast' not in columns:
+        logger.info("Migrating database: adding broadcast columns to scheduled_calls")
+        cursor.execute('ALTER TABLE scheduled_calls ADD COLUMN is_broadcast INTEGER DEFAULT 0')
+        cursor.execute('ALTER TABLE scheduled_calls ADD COLUMN concurrent_calls INTEGER DEFAULT 5')
+        cursor.execute('ALTER TABLE scheduled_calls ADD COLUMN pre_message_delay INTEGER DEFAULT 1')
+        cursor.execute('ALTER TABLE scheduled_calls ADD COLUMN max_ring_time INTEGER DEFAULT 45')
+        conn.commit()
+        logger.info("✓ Database migration v3 completed")
+
+    conn.close()
+
+
 async def run_scheduler():
     """Background task to execute scheduled calls"""
     import requests
+    import json as json_lib
 
     while True:
         try:
@@ -604,7 +672,8 @@ async def run_scheduler():
             now = datetime.now().strftime("%Y-%m-%dT%H:%M")
             cursor.execute('''
                 SELECT id, name, phone_number, group_name, message, tts_text,
-                       recording_file, caller_id, scheduled_time, repeat_type, repeat_days
+                       recording_file, caller_id, scheduled_time, repeat_type, repeat_days,
+                       is_broadcast, concurrent_calls, pre_message_delay, max_ring_time
                 FROM scheduled_calls
                 WHERE enabled = 1
                   AND status = 'pending'
@@ -615,19 +684,45 @@ async def run_scheduler():
             conn.close()
 
             for call in due_calls:
-                call_id, name, phone_number, group_name, message, tts_text, recording_file, caller_id, scheduled_time, repeat_type, repeat_days = call
+                (call_id, name, phone_number, group_name, message, tts_text, recording_file,
+                 caller_id, scheduled_time, repeat_type, repeat_days, is_broadcast,
+                 concurrent_calls, pre_message_delay, max_ring_time) = call
 
-                logger.info(f"⏰ Executing scheduled call: {name}")
+                # Handle None values for broadcast settings
+                is_broadcast = is_broadcast or 0
+                concurrent_calls = concurrent_calls or 5
+                pre_message_delay = pre_message_delay or 1
+                max_ring_time = max_ring_time or 45
+
+                logger.info(f"⏰ Executing scheduled {'broadcast' if is_broadcast or group_name else 'call'}: {name}")
 
                 try:
-                    # Build the call payload
-                    if group_name:
-                        # It's a broadcast to a group
+                    # Determine if this is a broadcast
+                    is_broadcast_call = is_broadcast or group_name
+
+                    if is_broadcast_call:
+                        # It's a broadcast to a group or multiple numbers
                         payload = {
                             "name": f"Scheduled: {name}",
-                            "group_name": group_name,
-                            "caller_id": caller_id
+                            "caller_id": caller_id,
+                            "concurrent_calls": concurrent_calls,
+                            "pre_message_delay": pre_message_delay,
+                            "max_ring_time": max_ring_time
                         }
+
+                        if group_name:
+                            payload["group_name"] = group_name
+                        elif phone_number:
+                            # Parse phone numbers if it's a JSON array
+                            try:
+                                phones = json_lib.loads(phone_number)
+                                if isinstance(phones, list):
+                                    payload["phone_numbers"] = phones
+                                else:
+                                    payload["phone_numbers"] = [phone_number]
+                            except (json_lib.JSONDecodeError, TypeError):
+                                payload["phone_numbers"] = [phone_number]
+
                         if tts_text:
                             payload["tts_text"] = tts_text
                         elif recording_file:
@@ -646,7 +741,9 @@ async def run_scheduler():
                         # Single call
                         payload = {
                             "phone_number": phone_number,
-                            "caller_id": caller_id
+                            "caller_id": caller_id,
+                            "pre_message_delay": pre_message_delay,
+                            "max_ring_time": max_ring_time
                         }
                         if tts_text:
                             payload["tts_text"] = tts_text
@@ -663,9 +760,9 @@ async def run_scheduler():
                         )
 
                     if response.status_code == 200:
-                        logger.info(f"✅ Scheduled call executed: {name}")
+                        logger.info(f"✅ Scheduled {'broadcast' if is_broadcast_call else 'call'} executed: {name}")
                     else:
-                        logger.error(f"❌ Scheduled call failed: {name} - {response.status_code}")
+                        logger.error(f"❌ Scheduled {'broadcast' if is_broadcast_call else 'call'} failed: {name} - {response.status_code}")
 
                 except Exception as e:
                     logger.error(f"Error executing scheduled call {name}: {e}")
@@ -771,6 +868,10 @@ class ScheduledCall(BaseModel):
     repeat_type: str = "none"  # none, daily, weekly, monthly
     repeat_days: Optional[str] = None  # comma-separated days for weekly (0-6, 0=Monday)
     enabled: bool = True
+    is_broadcast: bool = False  # Whether this is a broadcast or single call
+    concurrent_calls: int = 5  # For broadcasts
+    pre_message_delay: int = 1  # For broadcasts
+    max_ring_time: int = 45  # For broadcasts
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -2049,7 +2150,8 @@ async def get_scheduled_calls():
         cursor.execute('''
             SELECT id, name, phone_number, group_name, message, tts_text,
                    recording_file, caller_id, scheduled_time, repeat_type,
-                   repeat_days, enabled, last_run, next_run, status, created_at
+                   repeat_days, enabled, last_run, next_run, status, created_at,
+                   is_broadcast, concurrent_calls, pre_message_delay, max_ring_time
             FROM scheduled_calls
             ORDER BY scheduled_time ASC
         ''')
@@ -2074,7 +2176,11 @@ async def get_scheduled_calls():
                 "last_run": row[12],
                 "next_run": row[13],
                 "status": row[14],
-                "created_at": row[15]
+                "created_at": row[15],
+                "is_broadcast": row[16] if len(row) > 16 else 0,
+                "concurrent_calls": row[17] if len(row) > 17 else 5,
+                "pre_message_delay": row[18] if len(row) > 18 else 1,
+                "max_ring_time": row[19] if len(row) > 19 else 45
             })
 
         return {"scheduled": scheduled}
@@ -2094,8 +2200,9 @@ async def create_scheduled_call(schedule: ScheduledCall):
         cursor.execute('''
             INSERT INTO scheduled_calls
             (name, phone_number, group_name, message, tts_text, recording_file,
-             caller_id, scheduled_time, repeat_type, repeat_days, enabled, status, next_run)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+             caller_id, scheduled_time, repeat_type, repeat_days, enabled, status, next_run,
+             is_broadcast, concurrent_calls, pre_message_delay, max_ring_time)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
         ''', (
             schedule.name,
             schedule.phone_number,
@@ -2108,19 +2215,24 @@ async def create_scheduled_call(schedule: ScheduledCall):
             schedule.repeat_type,
             schedule.repeat_days,
             1 if schedule.enabled else 0,
-            schedule.scheduled_time
+            schedule.scheduled_time,
+            1 if schedule.is_broadcast else 0,
+            schedule.concurrent_calls,
+            schedule.pre_message_delay,
+            schedule.max_ring_time
         ))
 
         schedule_id = cursor.lastrowid
         conn.commit()
         conn.close()
 
-        logger.info(f"✅ Scheduled call created: {schedule.name} for {schedule.scheduled_time}")
+        logger.info(f"✅ Scheduled {'broadcast' if schedule.is_broadcast else 'call'} created: {schedule.name} for {schedule.scheduled_time}")
         return {
             "status": "success",
             "id": schedule_id,
             "name": schedule.name,
-            "scheduled_time": schedule.scheduled_time
+            "scheduled_time": schedule.scheduled_time,
+            "is_broadcast": schedule.is_broadcast
         }
 
     except Exception as e:

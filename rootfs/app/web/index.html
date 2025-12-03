@@ -655,11 +655,45 @@
                         <small style="color: #666;">How long to wait for answer before giving up</small>
                     </div>
 
-                    <button type="submit" class="btn">Start Broadcast</button>
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                            <input type="checkbox" id="broadcast-schedule-enabled" onchange="toggleBroadcastScheduleFields()" style="width: auto;">
+                            <span>Schedule for Later</span>
+                        </label>
+                    </div>
+
+                    <div id="broadcast-schedule-fields" class="hidden" style="background: #e8f5e9; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                        <div class="form-group">
+                            <label>Schedule Name *</label>
+                            <input type="text" id="broadcast-schedule-name" placeholder="e.g., Daily Announcement">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Date & Time *</label>
+                            <input type="datetime-local" id="broadcast-schedule-time">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Repeat</label>
+                            <select id="broadcast-repeat-type">
+                                <option value="none">One Time Only</option>
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="monthly">Monthly</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn" id="broadcast-submit-btn">Start Broadcast</button>
                 </form>
             </div>
 
-            <h3 style="margin-bottom: 15px;">Broadcast History</h3>
+            <div style="margin-top: 30px; border-top: 1px solid #e0e0e0; padding-top: 20px;">
+                <h3 style="margin-bottom: 15px; color: #333;">Scheduled Broadcasts</h3>
+                <div id="scheduled-broadcasts-list"></div>
+            </div>
+
+            <h3 style="margin-bottom: 15px; margin-top: 30px;">Broadcast History</h3>
             <button class="btn btn-secondary" onclick="loadBroadcasts()" style="margin-bottom: 20px;">Refresh</button>
             <div id="broadcasts-list"></div>
         </div>
@@ -882,6 +916,7 @@
                 loadBroadcasts();
                 loadRecordingsForSelect('broadcast-recording-select');
                 loadGroupsForSelect();
+                loadScheduledBroadcasts();
             }
             if (tabName === 'groups') loadGroups();
             if (tabName === 'history') loadCallRecords();
@@ -1194,7 +1229,7 @@
             }
         }
 
-        // Toggle schedule fields
+        // Toggle schedule fields for calls
         function toggleScheduleFields() {
             const enabled = document.getElementById('call-schedule-enabled').checked;
             document.getElementById('schedule-fields').classList.toggle('hidden', !enabled);
@@ -1206,6 +1241,21 @@
                 now.setHours(now.getHours() + 1);
                 now.setMinutes(0);
                 document.getElementById('call-schedule-time').value = now.toISOString().slice(0, 16);
+            }
+        }
+
+        // Toggle schedule fields for broadcasts
+        function toggleBroadcastScheduleFields() {
+            const enabled = document.getElementById('broadcast-schedule-enabled').checked;
+            document.getElementById('broadcast-schedule-fields').classList.toggle('hidden', !enabled);
+            document.getElementById('broadcast-submit-btn').textContent = enabled ? 'Schedule Broadcast' : 'Start Broadcast';
+
+            // Set default datetime to now + 1 hour
+            if (enabled && !document.getElementById('broadcast-schedule-time').value) {
+                const now = new Date();
+                now.setHours(now.getHours() + 1);
+                now.setMinutes(0);
+                document.getElementById('broadcast-schedule-time').value = now.toISOString().slice(0, 16);
             }
         }
 
@@ -1273,6 +1323,87 @@
                 showAlert('call-alert', 'Scheduled call deleted', 'success');
             } catch (error) {
                 showAlert('call-alert', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Load scheduled broadcasts
+        async function loadScheduledBroadcasts() {
+            const list = document.getElementById('scheduled-broadcasts-list');
+            try {
+                const response = await fetch(`${API_URL}/api/scheduled?is_broadcast=true`);
+                const data = await response.json();
+
+                // Filter for broadcasts only
+                const broadcasts = data.scheduled.filter(s => s.is_broadcast === 1 || s.is_broadcast === true);
+
+                if (broadcasts.length === 0) {
+                    list.innerHTML = '<p style="color: #666;">No scheduled broadcasts</p>';
+                    return;
+                }
+
+                list.innerHTML = broadcasts.map(schedule => {
+                    const statusColors = {
+                        'pending': '#28a745',
+                        'completed': '#6c757d',
+                        'failed': '#dc3545'
+                    };
+                    const statusColor = statusColors[schedule.status] || '#ffc107';
+                    const scheduledDate = new Date(schedule.scheduled_time).toLocaleString();
+
+                    // Parse phone numbers if it's JSON
+                    let recipients = schedule.group_name || 'No recipients';
+                    if (schedule.phone_number) {
+                        try {
+                            const phones = JSON.parse(schedule.phone_number);
+                            recipients = Array.isArray(phones) ? `${phones.length} numbers` : schedule.phone_number;
+                        } catch {
+                            recipients = schedule.phone_number;
+                        }
+                    }
+
+                    return `
+                        <div class="call-history-item" style="display: flex; justify-content: space-between; align-items: center; padding: 15px; margin-bottom: 10px; background: #e8f5e9; border-radius: 8px; border-left: 4px solid ${statusColor};">
+                            <div>
+                                <div style="font-weight: 600; color: #333;">📢 ${schedule.name}</div>
+                                <div style="font-size: 14px; color: #666;">
+                                    ${recipients}
+                                    &bull; ${scheduledDate}
+                                    ${schedule.repeat_type !== 'none' ? `&bull; Repeats ${schedule.repeat_type}` : ''}
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 10px;">
+                                <button class="btn btn-small ${schedule.enabled ? 'btn-secondary' : ''}"
+                                        onclick="toggleBroadcastSchedule(${schedule.id})"
+                                        title="${schedule.enabled ? 'Disable' : 'Enable'}">
+                                    ${schedule.enabled ? 'Enabled' : 'Disabled'}
+                                </button>
+                                <button class="btn btn-small btn-danger" onclick="deleteBroadcastSchedule(${schedule.id})">Delete</button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                list.innerHTML = '<p style="color: #dc3545;">Error loading scheduled broadcasts</p>';
+            }
+        }
+
+        async function toggleBroadcastSchedule(id) {
+            try {
+                await fetch(`${API_URL}/api/scheduled/${id}/toggle`, { method: 'POST' });
+                loadScheduledBroadcasts();
+            } catch (error) {
+                showAlert('broadcast-alert', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function deleteBroadcastSchedule(id) {
+            if (!confirm('Delete this scheduled broadcast?')) return;
+            try {
+                await fetch(`${API_URL}/api/scheduled/${id}`, { method: 'DELETE' });
+                loadScheduledBroadcasts();
+                showAlert('broadcast-alert', 'Scheduled broadcast deleted', 'success');
+            } catch (error) {
+                showAlert('broadcast-alert', `Error: ${error.message}`, 'error');
             }
         }
 
@@ -1425,6 +1556,7 @@
 
             const recipientType = document.getElementById('recipient-type').value;
             const type = document.getElementById('broadcast-message-type').value;
+            const isScheduled = document.getElementById('broadcast-schedule-enabled').checked;
 
             const data = {
                 name: document.getElementById('broadcast-name').value,
@@ -1450,6 +1582,61 @@
                 data.recording_file = document.getElementById('broadcast-recording-select').value;
             }
 
+            // Handle scheduled broadcasts
+            if (isScheduled) {
+                const scheduleName = document.getElementById('broadcast-schedule-name').value;
+                const scheduleTime = document.getElementById('broadcast-schedule-time').value;
+                const repeatType = document.getElementById('broadcast-repeat-type').value;
+
+                if (!scheduleName || !scheduleTime) {
+                    showAlert('broadcast-alert', 'Please provide a schedule name and date/time', 'error');
+                    return;
+                }
+
+                // Create scheduled broadcast
+                const scheduleData = {
+                    name: scheduleName,
+                    phone_number: recipientType === 'manual' ? JSON.stringify(phoneNumbers) : null,
+                    group_name: recipientType === 'group' ? document.getElementById('group-select').value : null,
+                    message: data.name,
+                    tts_text: type === 'tts' ? document.getElementById('broadcast-tts').value : null,
+                    recording_file: type === 'recording' ? document.getElementById('broadcast-recording-select').value : null,
+                    caller_id: data.caller_id,
+                    scheduled_time: scheduleTime,
+                    repeat_type: repeatType,
+                    is_broadcast: true,
+                    concurrent_calls: data.concurrent_calls,
+                    pre_message_delay: data.pre_message_delay,
+                    max_ring_time: data.max_ring_time
+                };
+
+                try {
+                    const response = await fetch(`${API_URL}/api/scheduled_calls`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(scheduleData)
+                    });
+
+                    if (response.ok) {
+                        const result = await response.json();
+                        showAlert('broadcast-alert', `Broadcast scheduled successfully! ID: ${result.id}`, 'success');
+                        e.target.reset();
+                        phoneNumbers = [];
+                        updatePhoneList();
+                        document.getElementById('broadcast-schedule-enabled').checked = false;
+                        toggleBroadcastScheduleFields();
+                        loadScheduledBroadcasts();
+                    } else {
+                        const error = await response.json();
+                        showAlert('broadcast-alert', error.detail || 'Failed to schedule broadcast', 'error');
+                    }
+                } catch (error) {
+                    showAlert('broadcast-alert', `Error: ${error.message}`, 'error');
+                }
+                return;
+            }
+
+            // Regular immediate broadcast
             try {
                 const response = await fetch(`${API_URL}/api/broadcast`, {
                     method: 'POST',
