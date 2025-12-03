@@ -186,6 +186,18 @@ def init_database():
         INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_pin', '1234')
     ''')
 
+    # DIDs (Direct Inward Dialing numbers) table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS dids (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone_number TEXT UNIQUE NOT NULL,
+            name TEXT,
+            description TEXT,
+            is_default INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
     # Contact groups table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS contact_groups (
@@ -2531,6 +2543,177 @@ async def update_setting(key: str, request: dict):
         raise
     except Exception as e:
         logger.error(f"Error updating setting {key}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# DID MANAGEMENT ENDPOINTS
+# ============================================================================
+
+@app.get("/api/dids")
+async def list_dids():
+    """Get all DIDs"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, phone_number, name, description, is_default, created_at FROM dids ORDER BY is_default DESC, name ASC')
+        rows = cursor.fetchall()
+        conn.close()
+
+        dids = []
+        for row in rows:
+            dids.append({
+                "id": row[0],
+                "phone_number": row[1],
+                "name": row[2],
+                "description": row[3],
+                "is_default": bool(row[4]),
+                "created_at": row[5]
+            })
+
+        return {"dids": dids}
+
+    except Exception as e:
+        logger.error(f"Error listing DIDs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/dids")
+async def add_did(request: dict):
+    """Add a new DID"""
+    try:
+        phone_number = request.get("phone_number", "").strip()
+        name = request.get("name", "").strip()
+        description = request.get("description", "").strip()
+        is_default = request.get("is_default", False)
+
+        if not phone_number:
+            raise HTTPException(status_code=400, detail="Phone number is required")
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # If this is set as default, unset other defaults first
+        if is_default:
+            cursor.execute('UPDATE dids SET is_default = 0')
+
+        cursor.execute('''
+            INSERT INTO dids (phone_number, name, description, is_default)
+            VALUES (?, ?, ?, ?)
+        ''', (phone_number, name or None, description or None, 1 if is_default else 0))
+
+        did_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+
+        logger.info(f"✅ DID added: {phone_number} ({name})")
+        return {"status": "success", "id": did_id, "phone_number": phone_number}
+
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="This phone number already exists")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding DID: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/dids/{did_id}")
+async def update_did(did_id: int, request: dict):
+    """Update a DID"""
+    try:
+        phone_number = request.get("phone_number", "").strip()
+        name = request.get("name", "").strip()
+        description = request.get("description", "").strip()
+        is_default = request.get("is_default", False)
+
+        if not phone_number:
+            raise HTTPException(status_code=400, detail="Phone number is required")
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # If this is set as default, unset other defaults first
+        if is_default:
+            cursor.execute('UPDATE dids SET is_default = 0')
+
+        cursor.execute('''
+            UPDATE dids SET phone_number = ?, name = ?, description = ?, is_default = ?
+            WHERE id = ?
+        ''', (phone_number, name or None, description or None, 1 if is_default else 0, did_id))
+
+        if cursor.rowcount == 0:
+            conn.close()
+            raise HTTPException(status_code=404, detail="DID not found")
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"✅ DID updated: {phone_number}")
+        return {"status": "success", "id": did_id}
+
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="This phone number already exists")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating DID: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/dids/{did_id}")
+async def delete_did(did_id: int):
+    """Delete a DID"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM dids WHERE id = ?', (did_id,))
+
+        if cursor.rowcount == 0:
+            conn.close()
+            raise HTTPException(status_code=404, detail="DID not found")
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"✅ DID deleted: {did_id}")
+        return {"status": "success"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting DID: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/dids/{did_id}/set-default")
+async def set_default_did(did_id: int):
+    """Set a DID as the default"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Unset all defaults
+        cursor.execute('UPDATE dids SET is_default = 0')
+
+        # Set this one as default
+        cursor.execute('UPDATE dids SET is_default = 1 WHERE id = ?', (did_id,))
+
+        if cursor.rowcount == 0:
+            conn.close()
+            raise HTTPException(status_code=404, detail="DID not found")
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"✅ Default DID set: {did_id}")
+        return {"status": "success"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error setting default DID: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
