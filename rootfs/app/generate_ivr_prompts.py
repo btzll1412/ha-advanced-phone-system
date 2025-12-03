@@ -67,7 +67,7 @@ PROMPTS = {
     # Broadcast callback prompts
     "playing-broadcast-history": "Playing your broadcast message history, starting with the most recent.",
     "end-of-messages": "End of messages.",
-    "press-0-for-operator": "Press 0 to speak with an operator, or hang up to disconnect.",
+    "no-messages": "There are no messages available for this number.",
 }
 
 
