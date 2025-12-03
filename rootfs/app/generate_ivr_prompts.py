@@ -68,6 +68,12 @@ PROMPTS = {
     "playing-broadcast-history": "Playing your broadcast message history, starting with the most recent.",
     "end-of-messages": "End of messages.",
     "no-messages": "There are no messages available for this number.",
+
+    # Admin PIN authentication prompts
+    "enter-admin-pin": "Please enter your 4 digit admin PIN.",
+    "access-granted": "Access granted. Welcome to the broadcast system.",
+    "incorrect-pin": "Incorrect PIN. Please try again.",
+    "too-many-attempts": "Too many incorrect attempts. Access denied.",
 }
 
 
