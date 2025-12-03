@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import os
+import secrets
 import sqlite3
 import subprocess
 import uuid
@@ -18,11 +19,22 @@ from pathlib import Path
 from typing import List, Dict, Optional
 
 import aiofiles
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, UploadFile, File, Response, Cookie
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from gtts import gTTS
 from pydantic import BaseModel
+
+# ============================================================================
+# AUTHENTICATION CONFIGURATION
+# ============================================================================
+WEB_AUTH_ENABLED = os.environ.get('WEB_AUTH_ENABLED', 'false').lower() == 'true'
+WEB_AUTH_USERNAME = os.environ.get('WEB_AUTH_USERNAME', 'admin')
+WEB_AUTH_PASSWORD = os.environ.get('WEB_AUTH_PASSWORD', 'admin')
+
+# Session storage (in-memory, tokens expire after 24 hours)
+active_sessions: Dict[str, datetime] = {}
+SESSION_DURATION = timedelta(hours=24)
 
 class CallDirection(str, Enum):
     INTERNAL = "internal"
@@ -76,10 +88,127 @@ logger = logging.getLogger(__name__)
 # Initialize FastAPI
 app = FastAPI(title="Advanced Phone System API", version="1.1.0")
 
+
+# ============================================================================
+# AUTHENTICATION FUNCTIONS
+# ============================================================================
+
+def is_valid_session(session_token: str) -> bool:
+    """Check if a session token is valid and not expired"""
+    if not session_token or session_token not in active_sessions:
+        return False
+
+    expiry = active_sessions[session_token]
+    if datetime.now() > expiry:
+        # Session expired, remove it
+        del active_sessions[session_token]
+        return False
+
+    return True
+
+
+def create_session() -> str:
+    """Create a new session token"""
+    token = secrets.token_urlsafe(32)
+    active_sessions[token] = datetime.now() + SESSION_DURATION
+    return token
+
+
+def cleanup_expired_sessions():
+    """Remove expired sessions"""
+    now = datetime.now()
+    expired = [token for token, expiry in active_sessions.items() if now > expiry]
+    for token in expired:
+        del active_sessions[token]
+
+
+def check_auth(request: Request) -> bool:
+    """Check if request is authenticated"""
+    if not WEB_AUTH_ENABLED:
+        return True
+
+    session_token = request.cookies.get("session_token")
+    return is_valid_session(session_token)
+
+
+# ============================================================================
+# AUTHENTICATION ENDPOINTS
+# ============================================================================
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """Serve the login page"""
+    # If auth is disabled, redirect to main UI
+    if not WEB_AUTH_ENABLED:
+        return RedirectResponse(url="/", status_code=302)
+
+    # If already logged in, redirect to main UI
+    if check_auth(request):
+        return RedirectResponse(url="/", status_code=302)
+
+    return FileResponse("/app/web/login.html")
+
+
+@app.post("/api/auth/login")
+async def do_login(request: Request, response: Response):
+    """Process login request"""
+    if not WEB_AUTH_ENABLED:
+        return {"status": "success", "message": "Authentication disabled"}
+
+    try:
+        body = await request.json()
+        username = body.get("username", "")
+        password = body.get("password", "")
+
+        if username == WEB_AUTH_USERNAME and password == WEB_AUTH_PASSWORD:
+            # Create session
+            session_token = create_session()
+            response.set_cookie(
+                key="session_token",
+                value=session_token,
+                httponly=True,
+                max_age=int(SESSION_DURATION.total_seconds()),
+                samesite="strict"
+            )
+            logger.info(f"User '{username}' logged in successfully")
+            return {"status": "success"}
+        else:
+            logger.warning(f"Failed login attempt for user '{username}'")
+            raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid request body")
+
+
+@app.post("/api/auth/logout")
+async def do_logout(request: Request, response: Response):
+    """Process logout request"""
+    session_token = request.cookies.get("session_token")
+    if session_token and session_token in active_sessions:
+        del active_sessions[session_token]
+
+    response.delete_cookie("session_token")
+    return {"status": "success"}
+
+
+@app.get("/api/auth/status")
+async def auth_status(request: Request):
+    """Check authentication status"""
+    return {
+        "authenticated": check_auth(request),
+        "auth_enabled": WEB_AUTH_ENABLED
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
-async def serve_web_ui():
+async def serve_web_ui(request: Request):
     """Serve the web UI"""
+    # If auth is enabled and not logged in, redirect to login
+    if WEB_AUTH_ENABLED and not check_auth(request):
+        return RedirectResponse(url="/login", status_code=302)
+
     return FileResponse("/app/web/index.html")
+
 
 @app.get("/api")
 async def api_info():
@@ -87,8 +216,48 @@ async def api_info():
     return {
         "service": "Advanced Phone System API",
         "version": "1.1.0",
-        "status": "running"
+        "status": "running",
+        "auth_enabled": WEB_AUTH_ENABLED
     }
+
+
+# Middleware to check authentication for API endpoints
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Check authentication for protected endpoints"""
+    path = request.url.path
+
+    # Public endpoints that don't require authentication
+    public_paths = [
+        "/login",
+        "/api/auth/login",
+        "/api/auth/status",
+        "/api/auth/logout",
+        "/api",  # Info endpoint
+    ]
+
+    # Static files and assets
+    if path.startswith("/static") or path.endswith(".css") or path.endswith(".js"):
+        return await call_next(request)
+
+    # Check if path is public
+    if any(path == p or path.startswith(p + "/") for p in public_paths):
+        return await call_next(request)
+
+    # If auth is enabled and this is an API call, check authentication
+    if WEB_AUTH_ENABLED and path.startswith("/api/"):
+        if not check_auth(request):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Not authenticated"}
+            )
+
+    # Cleanup expired sessions periodically
+    if len(active_sessions) > 100:
+        cleanup_expired_sessions()
+
+    return await call_next(request)
+
 
 # Configuration paths
 CONFIG_FILE = "/data/options.json"
