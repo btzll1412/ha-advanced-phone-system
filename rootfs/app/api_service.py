@@ -202,7 +202,29 @@ def init_database():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
+
+    # Scheduled calls table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS scheduled_calls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            phone_number TEXT,
+            group_name TEXT,
+            message TEXT,
+            tts_text TEXT,
+            recording_file TEXT,
+            caller_id TEXT,
+            scheduled_time TEXT NOT NULL,
+            repeat_type TEXT DEFAULT 'none',
+            repeat_days TEXT,
+            enabled INTEGER DEFAULT 1,
+            last_run TEXT,
+            next_run TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
     conn.commit()
     conn.close()
     logger.info("✓ Database initialized")
@@ -537,6 +559,9 @@ async def startup_event():
     asyncio.create_task(monitor_cdr())
     logger.info("✓ CDR monitoring task started")
 
+    asyncio.create_task(run_scheduler())
+    logger.info("✓ Call scheduler task started")
+
     os.makedirs(RECORDINGS_PATH, exist_ok=True)
     os.makedirs(ASTERISK_SOUNDS, exist_ok=True)
     logger.info("✓ API Service started")
@@ -545,21 +570,152 @@ def migrate_database_v2():
     """Add is_voicemail column to call_history"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    
+
     # Check if is_voicemail column exists
     cursor.execute("PRAGMA table_info(call_history)")
     columns = [column[1] for column in cursor.fetchall()]
-    
+
     if 'is_voicemail' not in columns:
         logger.info("Migrating database: adding is_voicemail column")
         cursor.execute('''
-            ALTER TABLE call_history 
+            ALTER TABLE call_history
             ADD COLUMN is_voicemail INTEGER DEFAULT NULL
         ''')
         conn.commit()
         logger.info("✓ Database migration v2 completed")
-    
+
     conn.close()
+
+
+async def run_scheduler():
+    """Background task to execute scheduled calls"""
+    import requests
+
+    while True:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # Get all enabled scheduled calls that are due
+            now = datetime.now().strftime("%Y-%m-%dT%H:%M")
+            cursor.execute('''
+                SELECT id, name, phone_number, group_name, message, tts_text,
+                       recording_file, caller_id, scheduled_time, repeat_type, repeat_days
+                FROM scheduled_calls
+                WHERE enabled = 1
+                  AND status = 'pending'
+                  AND scheduled_time <= ?
+            ''', (now,))
+
+            due_calls = cursor.fetchall()
+            conn.close()
+
+            for call in due_calls:
+                call_id, name, phone_number, group_name, message, tts_text, recording_file, caller_id, scheduled_time, repeat_type, repeat_days = call
+
+                logger.info(f"⏰ Executing scheduled call: {name}")
+
+                try:
+                    # Build the call payload
+                    if group_name:
+                        # It's a broadcast to a group
+                        payload = {
+                            "name": f"Scheduled: {name}",
+                            "group_name": group_name,
+                            "caller_id": caller_id
+                        }
+                        if tts_text:
+                            payload["tts_text"] = tts_text
+                        elif recording_file:
+                            payload["recording_file"] = recording_file
+                        elif message:
+                            payload["message"] = message
+
+                        # Make internal API call for broadcast
+                        response = requests.post(
+                            "http://localhost:8088/api/broadcast",
+                            json=payload,
+                            timeout=30
+                        )
+                    else:
+                        # Single call
+                        payload = {
+                            "phone_number": phone_number,
+                            "caller_id": caller_id
+                        }
+                        if tts_text:
+                            payload["tts_text"] = tts_text
+                        elif recording_file:
+                            payload["recording_file"] = recording_file
+                        elif message:
+                            payload["message"] = message
+
+                        response = requests.post(
+                            "http://localhost:8088/api/call",
+                            json=payload,
+                            timeout=30
+                        )
+
+                    if response.status_code == 200:
+                        logger.info(f"✅ Scheduled call executed: {name}")
+                    else:
+                        logger.error(f"❌ Scheduled call failed: {name} - {response.status_code}")
+
+                except Exception as e:
+                    logger.error(f"Error executing scheduled call {name}: {e}")
+
+                # Update the scheduled call status
+                conn = get_db_connection()
+                cursor = conn.cursor()
+
+                if repeat_type == 'none':
+                    # One-time call - mark as completed
+                    cursor.execute('''
+                        UPDATE scheduled_calls
+                        SET status = 'completed', last_run = ?
+                        WHERE id = ?
+                    ''', (datetime.now().isoformat(), call_id))
+                else:
+                    # Recurring call - calculate next run time
+                    next_run = calculate_next_run(scheduled_time, repeat_type, repeat_days)
+                    cursor.execute('''
+                        UPDATE scheduled_calls
+                        SET last_run = ?, scheduled_time = ?, next_run = ?
+                        WHERE id = ?
+                    ''', (datetime.now().isoformat(), next_run, next_run, call_id))
+
+                conn.commit()
+                conn.close()
+
+            # Check every 30 seconds
+            await asyncio.sleep(30)
+
+        except Exception as e:
+            logger.error(f"Scheduler error: {e}")
+            await asyncio.sleep(60)
+
+
+def calculate_next_run(current_time: str, repeat_type: str, repeat_days: str) -> str:
+    """Calculate the next run time for recurring scheduled calls"""
+    from datetime import timedelta
+
+    try:
+        # Parse the current scheduled time
+        dt = datetime.fromisoformat(current_time.replace('Z', '+00:00').replace('.000', ''))
+    except ValueError:
+        dt = datetime.strptime(current_time[:16], "%Y-%m-%dT%H:%M")
+
+    if repeat_type == 'daily':
+        next_dt = dt + timedelta(days=1)
+    elif repeat_type == 'weekly':
+        next_dt = dt + timedelta(weeks=1)
+    elif repeat_type == 'monthly':
+        # Add roughly a month
+        next_dt = dt + timedelta(days=30)
+    else:
+        next_dt = dt
+
+    return next_dt.strftime("%Y-%m-%dT%H:%M")
 
 
 # ============================================================================
@@ -596,6 +752,20 @@ class ContactGroup(BaseModel):
     name: str
     contacts: List[ContactMember]  # Changed from phone_numbers
     caller_id: Optional[str] = None
+
+class ScheduledCall(BaseModel):
+    name: str
+    phone_number: Optional[str] = None
+    group_name: Optional[str] = None
+    message: Optional[str] = None
+    tts_text: Optional[str] = None
+    recording_file: Optional[str] = None
+    caller_id: Optional[str] = None
+    scheduled_time: str  # ISO format datetime
+    repeat_type: str = "none"  # none, daily, weekly, monthly
+    repeat_days: Optional[str] = None  # comma-separated days for weekly (0-6, 0=Monday)
+    enabled: bool = True
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -1859,6 +2029,249 @@ async def register_recording(filename: str, recording_id: str):
     except Exception as e:
         logger.error(f"Error registering recording: {e}")
         return {"status": "error", "message": str(e)}
+
+# ============================================================================
+# SCHEDULED CALLS ENDPOINTS
+# ============================================================================
+
+@app.get("/api/scheduled")
+async def get_scheduled_calls():
+    """Get all scheduled calls"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, name, phone_number, group_name, message, tts_text,
+                   recording_file, caller_id, scheduled_time, repeat_type,
+                   repeat_days, enabled, last_run, next_run, status, created_at
+            FROM scheduled_calls
+            ORDER BY scheduled_time ASC
+        ''')
+        rows = cursor.fetchall()
+        conn.close()
+
+        scheduled = []
+        for row in rows:
+            scheduled.append({
+                "id": row[0],
+                "name": row[1],
+                "phone_number": row[2],
+                "group_name": row[3],
+                "message": row[4],
+                "tts_text": row[5],
+                "recording_file": row[6],
+                "caller_id": row[7],
+                "scheduled_time": row[8],
+                "repeat_type": row[9],
+                "repeat_days": row[10],
+                "enabled": bool(row[11]),
+                "last_run": row[12],
+                "next_run": row[13],
+                "status": row[14],
+                "created_at": row[15]
+            })
+
+        return {"scheduled": scheduled}
+
+    except Exception as e:
+        logger.error(f"Error getting scheduled calls: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/scheduled")
+async def create_scheduled_call(schedule: ScheduledCall):
+    """Create a new scheduled call"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT INTO scheduled_calls
+            (name, phone_number, group_name, message, tts_text, recording_file,
+             caller_id, scheduled_time, repeat_type, repeat_days, enabled, status, next_run)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+        ''', (
+            schedule.name,
+            schedule.phone_number,
+            schedule.group_name,
+            schedule.message,
+            schedule.tts_text,
+            schedule.recording_file,
+            schedule.caller_id,
+            schedule.scheduled_time,
+            schedule.repeat_type,
+            schedule.repeat_days,
+            1 if schedule.enabled else 0,
+            schedule.scheduled_time
+        ))
+
+        schedule_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+
+        logger.info(f"✅ Scheduled call created: {schedule.name} for {schedule.scheduled_time}")
+        return {
+            "status": "success",
+            "id": schedule_id,
+            "name": schedule.name,
+            "scheduled_time": schedule.scheduled_time
+        }
+
+    except Exception as e:
+        logger.error(f"Error creating scheduled call: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/scheduled/{schedule_id}")
+async def get_scheduled_call(schedule_id: int):
+    """Get a specific scheduled call"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, name, phone_number, group_name, message, tts_text,
+                   recording_file, caller_id, scheduled_time, repeat_type,
+                   repeat_days, enabled, last_run, next_run, status, created_at
+            FROM scheduled_calls
+            WHERE id = ?
+        ''', (schedule_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Scheduled call not found")
+
+        return {
+            "id": row[0],
+            "name": row[1],
+            "phone_number": row[2],
+            "group_name": row[3],
+            "message": row[4],
+            "tts_text": row[5],
+            "recording_file": row[6],
+            "caller_id": row[7],
+            "scheduled_time": row[8],
+            "repeat_type": row[9],
+            "repeat_days": row[10],
+            "enabled": bool(row[11]),
+            "last_run": row[12],
+            "next_run": row[13],
+            "status": row[14],
+            "created_at": row[15]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting scheduled call: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/scheduled/{schedule_id}")
+async def update_scheduled_call(schedule_id: int, schedule: ScheduledCall):
+    """Update a scheduled call"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            UPDATE scheduled_calls
+            SET name = ?, phone_number = ?, group_name = ?, message = ?,
+                tts_text = ?, recording_file = ?, caller_id = ?, scheduled_time = ?,
+                repeat_type = ?, repeat_days = ?, enabled = ?, next_run = ?,
+                status = CASE WHEN status = 'completed' THEN 'pending' ELSE status END
+            WHERE id = ?
+        ''', (
+            schedule.name,
+            schedule.phone_number,
+            schedule.group_name,
+            schedule.message,
+            schedule.tts_text,
+            schedule.recording_file,
+            schedule.caller_id,
+            schedule.scheduled_time,
+            schedule.repeat_type,
+            schedule.repeat_days,
+            1 if schedule.enabled else 0,
+            schedule.scheduled_time,
+            schedule_id
+        ))
+
+        if cursor.rowcount == 0:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Scheduled call not found")
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"✅ Scheduled call updated: {schedule.name}")
+        return {"status": "success", "id": schedule_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating scheduled call: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/scheduled/{schedule_id}")
+async def delete_scheduled_call(schedule_id: int):
+    """Delete a scheduled call"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM scheduled_calls WHERE id = ?', (schedule_id,))
+
+        if cursor.rowcount == 0:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Scheduled call not found")
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"✅ Scheduled call deleted: {schedule_id}")
+        return {"status": "success", "id": schedule_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting scheduled call: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/scheduled/{schedule_id}/toggle")
+async def toggle_scheduled_call(schedule_id: int):
+    """Enable/disable a scheduled call"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            UPDATE scheduled_calls
+            SET enabled = CASE WHEN enabled = 1 THEN 0 ELSE 1 END
+            WHERE id = ?
+        ''', (schedule_id,))
+
+        if cursor.rowcount == 0:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Scheduled call not found")
+
+        # Get new status
+        cursor.execute('SELECT enabled FROM scheduled_calls WHERE id = ?', (schedule_id,))
+        enabled = cursor.fetchone()[0]
+
+        conn.commit()
+        conn.close()
+
+        return {"status": "success", "id": schedule_id, "enabled": bool(enabled)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error toggling scheduled call: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # ============================================================================
 # START SERVER

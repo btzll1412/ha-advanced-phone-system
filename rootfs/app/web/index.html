@@ -506,8 +506,42 @@
                     <small style="color: #666;">How long to wait for answer before giving up</small>
                 </div>
 
-                <button type="submit" class="btn">Make Call</button>
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="call-schedule-enabled" onchange="toggleScheduleFields()" style="width: auto;">
+                        <span>Schedule for Later</span>
+                    </label>
+                </div>
+
+                <div id="schedule-fields" class="hidden" style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                    <div class="form-group">
+                        <label>Schedule Name *</label>
+                        <input type="text" id="call-schedule-name" placeholder="e.g., Morning Reminder">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Date & Time *</label>
+                        <input type="datetime-local" id="call-schedule-time">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Repeat</label>
+                        <select id="call-repeat-type">
+                            <option value="none">One Time Only</option>
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly">Monthly</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn" id="call-submit-btn">Make Call</button>
             </form>
+
+            <div style="margin-top: 30px; border-top: 1px solid #e0e0e0; padding-top: 20px;">
+                <h3 style="margin-bottom: 15px; color: #333;">Scheduled Calls</h3>
+                <div id="scheduled-calls-list"></div>
+            </div>
         </div>
 
         <!-- Recordings Tab -->
@@ -839,7 +873,10 @@
             event.target.classList.add('active');
             
             if (tabName === 'dashboard') loadDashboard();
-            if (tabName === 'make-call') loadRecordingsForSelect('call-recording-select');
+            if (tabName === 'make-call') {
+                loadRecordingsForSelect('call-recording-select');
+                loadScheduledCalls();
+            }
             if (tabName === 'recordings') loadRecordings();
             if (tabName === 'broadcast') {
                 loadBroadcasts();
@@ -1157,41 +1194,172 @@
             }
         }
 
+        // Toggle schedule fields
+        function toggleScheduleFields() {
+            const enabled = document.getElementById('call-schedule-enabled').checked;
+            document.getElementById('schedule-fields').classList.toggle('hidden', !enabled);
+            document.getElementById('call-submit-btn').textContent = enabled ? 'Schedule Call' : 'Make Call';
+
+            // Set default datetime to now + 1 hour
+            if (enabled && !document.getElementById('call-schedule-time').value) {
+                const now = new Date();
+                now.setHours(now.getHours() + 1);
+                now.setMinutes(0);
+                document.getElementById('call-schedule-time').value = now.toISOString().slice(0, 16);
+            }
+        }
+
+        // Load scheduled calls
+        async function loadScheduledCalls() {
+            const list = document.getElementById('scheduled-calls-list');
+            try {
+                const response = await fetch(`${API_URL}/api/scheduled`);
+                const data = await response.json();
+
+                if (data.scheduled.length === 0) {
+                    list.innerHTML = '<p style="color: #666;">No scheduled calls</p>';
+                    return;
+                }
+
+                list.innerHTML = data.scheduled.map(schedule => {
+                    const statusColors = {
+                        'pending': '#28a745',
+                        'completed': '#6c757d',
+                        'failed': '#dc3545'
+                    };
+                    const statusColor = statusColors[schedule.status] || '#ffc107';
+                    const scheduledDate = new Date(schedule.scheduled_time).toLocaleString();
+
+                    return `
+                        <div class="call-history-item" style="display: flex; justify-content: space-between; align-items: center; padding: 15px; margin-bottom: 10px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid ${statusColor};">
+                            <div>
+                                <div style="font-weight: 600; color: #333;">${schedule.name}</div>
+                                <div style="font-size: 14px; color: #666;">
+                                    ${schedule.phone_number || schedule.group_name || 'No target'}
+                                    &bull; ${scheduledDate}
+                                    ${schedule.repeat_type !== 'none' ? `&bull; Repeats ${schedule.repeat_type}` : ''}
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 10px;">
+                                <button class="btn btn-small ${schedule.enabled ? 'btn-secondary' : ''}"
+                                        onclick="toggleSchedule(${schedule.id})"
+                                        title="${schedule.enabled ? 'Disable' : 'Enable'}">
+                                    ${schedule.enabled ? 'Enabled' : 'Disabled'}
+                                </button>
+                                <button class="btn btn-small btn-danger" onclick="deleteSchedule(${schedule.id})">Delete</button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                list.innerHTML = '<p style="color: #dc3545;">Error loading scheduled calls</p>';
+            }
+        }
+
+        async function toggleSchedule(id) {
+            try {
+                await fetch(`${API_URL}/api/scheduled/${id}/toggle`, { method: 'POST' });
+                loadScheduledCalls();
+            } catch (error) {
+                showAlert('call-alert', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function deleteSchedule(id) {
+            if (!confirm('Delete this scheduled call?')) return;
+            try {
+                await fetch(`${API_URL}/api/scheduled/${id}`, { method: 'DELETE' });
+                loadScheduledCalls();
+                showAlert('call-alert', 'Scheduled call deleted', 'success');
+            } catch (error) {
+                showAlert('call-alert', `Error: ${error.message}`, 'error');
+            }
+        }
+
         // Make Call Form
         document.getElementById('call-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
+            const isScheduled = document.getElementById('call-schedule-enabled').checked;
             const type = document.getElementById('call-message-type').value;
-            const data = {
-                phone_number: document.getElementById('call-phone').value,
-                caller_id: document.getElementById('call-caller-id').value || null,
-                max_retries: parseInt(document.getElementById('call-retries').value),
-                pre_message_delay: parseInt(document.getElementById('call-pre-delay').value),
-                max_ring_time: parseInt(document.getElementById('call-ring-time').value)
-            };
 
-            if (type === 'tts') {
-                data.message = document.getElementById('call-tts').value;
-            } else {
-                data.recording_file = document.getElementById('call-recording-select').value;
-            }
+            if (isScheduled) {
+                // Create scheduled call
+                const scheduleName = document.getElementById('call-schedule-name').value;
+                const scheduleTime = document.getElementById('call-schedule-time').value;
 
-            try {
-                const response = await fetch(`${API_URL}/api/call`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
-
-                if (response.ok) {
-                    const result = await response.json();
-                    showAlert('call-alert', `Call initiated! Call ID: ${result.call_id}`, 'success');
-                    e.target.reset();
-                } else {
-                    showAlert('call-alert', 'Failed to make call', 'error');
+                if (!scheduleName || !scheduleTime) {
+                    showAlert('call-alert', 'Please enter schedule name and time', 'error');
+                    return;
                 }
-            } catch (error) {
-                showAlert('call-alert', `Error: ${error.message}`, 'error');
+
+                const data = {
+                    name: scheduleName,
+                    phone_number: document.getElementById('call-phone').value,
+                    caller_id: document.getElementById('call-caller-id').value || null,
+                    scheduled_time: scheduleTime,
+                    repeat_type: document.getElementById('call-repeat-type').value
+                };
+
+                if (type === 'tts') {
+                    data.tts_text = document.getElementById('call-tts').value;
+                } else {
+                    data.recording_file = document.getElementById('call-recording-select').value;
+                }
+
+                try {
+                    const response = await fetch(`${API_URL}/api/scheduled`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+
+                    if (response.ok) {
+                        const result = await response.json();
+                        showAlert('call-alert', `Call scheduled for ${new Date(scheduleTime).toLocaleString()}`, 'success');
+                        e.target.reset();
+                        document.getElementById('call-schedule-enabled').checked = false;
+                        toggleScheduleFields();
+                        loadScheduledCalls();
+                    } else {
+                        showAlert('call-alert', 'Failed to schedule call', 'error');
+                    }
+                } catch (error) {
+                    showAlert('call-alert', `Error: ${error.message}`, 'error');
+                }
+            } else {
+                // Make immediate call
+                const data = {
+                    phone_number: document.getElementById('call-phone').value,
+                    caller_id: document.getElementById('call-caller-id').value || null,
+                    max_retries: parseInt(document.getElementById('call-retries').value),
+                    pre_message_delay: parseInt(document.getElementById('call-pre-delay').value),
+                    max_ring_time: parseInt(document.getElementById('call-ring-time').value)
+                };
+
+                if (type === 'tts') {
+                    data.message = document.getElementById('call-tts').value;
+                } else {
+                    data.recording_file = document.getElementById('call-recording-select').value;
+                }
+
+                try {
+                    const response = await fetch(`${API_URL}/api/call`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+
+                    if (response.ok) {
+                        const result = await response.json();
+                        showAlert('call-alert', `Call initiated! Call ID: ${result.call_id}`, 'success');
+                        e.target.reset();
+                    } else {
+                        showAlert('call-alert', 'Failed to make call', 'error');
+                    }
+                } catch (error) {
+                    showAlert('call-alert', `Error: ${error.message}`, 'error');
+                }
             }
         });
 
