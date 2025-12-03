@@ -422,6 +422,7 @@
             <button class="tab" onclick="showTab('broadcast')">Broadcasts</button>
             <button class="tab" onclick="showTab('groups')">Contact Groups</button>
             <button class="tab" onclick="showTab('history')">Call History</button>
+            <button class="tab" onclick="showTab('settings')">⚙️ Settings</button>
         </div>
 
         <!-- Dashboard Tab -->
@@ -891,6 +892,42 @@
                 </div>
             </div>
         </div>
+
+        <!-- Settings Tab -->
+        <div id="settings-tab" class="content hidden">
+            <h2 style="margin-bottom: 20px; color: #333;">⚙️ System Settings</h2>
+
+            <div id="settings-alert" class="alert" style="display: none;"></div>
+
+            <!-- Admin PIN Section -->
+            <div style="background: #f8f9fa; padding: 25px; border-radius: 10px; border-left: 4px solid #667eea; margin-bottom: 20px;">
+                <h3 style="margin-bottom: 15px; color: #333;">🔐 Admin PIN</h3>
+                <p style="color: #666; margin-bottom: 15px;">
+                    The admin PIN is used to access the broadcast menu when calling in from an external number.
+                    Press * during an inbound call to enter the admin PIN.
+                </p>
+
+                <div class="form-group" style="max-width: 300px;">
+                    <label for="admin-pin-input">Admin PIN (4 digits)</label>
+                    <input type="password" id="admin-pin-input" maxlength="4" pattern="[0-9]{4}"
+                           placeholder="Enter 4-digit PIN" style="font-size: 18px; letter-spacing: 5px; text-align: center;">
+                </div>
+
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button onclick="togglePinVisibility()" class="btn btn-secondary btn-small">
+                        👁️ Show/Hide
+                    </button>
+                    <button onclick="saveAdminPin()" class="btn btn-small">
+                        💾 Save PIN
+                    </button>
+                </div>
+            </div>
+
+            <!-- Future Settings Sections Can Go Here -->
+            <div style="background: #e9ecef; padding: 20px; border-radius: 10px; text-align: center; color: #6c757d;">
+                <p>More settings options coming soon...</p>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -920,6 +957,7 @@
             }
             if (tabName === 'groups') loadGroups();
             if (tabName === 'history') loadCallRecords();
+            if (tabName === 'settings') loadSettings();
         }
 
         // Toggle functions
@@ -2533,6 +2571,60 @@ function exportGroupCSV(groupName) {
             alert(`Error exporting group: ${error.message}`);
         });
 }
+
+        // Settings functions
+        async function loadSettings() {
+            try {
+                const response = await fetch(`${API_URL}/api/settings/admin_pin`);
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('admin-pin-input').value = data.value || '';
+                }
+            } catch (error) {
+                console.error('Error loading settings:', error);
+            }
+        }
+
+        async function saveAdminPin() {
+            const alertEl = document.getElementById('settings-alert');
+            const pinInput = document.getElementById('admin-pin-input');
+            const pin = pinInput.value.trim();
+
+            // Validate PIN
+            if (!/^\d{4}$/.test(pin)) {
+                alertEl.className = 'alert alert-error';
+                alertEl.textContent = 'PIN must be exactly 4 digits';
+                alertEl.style.display = 'block';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/api/settings/admin_pin`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: pin })
+                });
+
+                if (response.ok) {
+                    alertEl.className = 'alert alert-success';
+                    alertEl.textContent = 'Admin PIN saved successfully!';
+                    alertEl.style.display = 'block';
+                    setTimeout(() => { alertEl.style.display = 'none'; }, 3000);
+                } else {
+                    throw new Error('Failed to save PIN');
+                }
+            } catch (error) {
+                alertEl.className = 'alert alert-error';
+                alertEl.textContent = `Error saving PIN: ${error.message}`;
+                alertEl.style.display = 'block';
+            }
+        }
+
+        function togglePinVisibility() {
+            const pinInput = document.getElementById('admin-pin-input');
+            pinInput.type = pinInput.type === 'password' ? 'text' : 'password';
+        }
+
         setInterval(() => {
             if (document.querySelector('.tab.active')?.textContent.trim() === 'Call History') {
                 loadCallRecords();
