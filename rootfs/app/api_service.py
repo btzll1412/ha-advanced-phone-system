@@ -12,7 +12,7 @@ import os
 import sqlite3
 import subprocess
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -152,10 +152,26 @@ def init_database():
             failed INTEGER DEFAULT 0,
             in_progress INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            completed_at TIMESTAMP
+            completed_at TIMESTAMP,
+            caller_id TEXT,
+            audio_file TEXT
         )
     ''')
-    
+
+    # Broadcast callbacks table - tracks caller IDs that should trigger playback
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS broadcast_callbacks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            caller_id TEXT NOT NULL,
+            audio_file TEXT NOT NULL,
+            broadcast_id TEXT NOT NULL,
+            broadcast_name TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP,
+            enabled INTEGER DEFAULT 1
+        )
+    ''')
+
     # Contact groups table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS contact_groups (
@@ -606,6 +622,9 @@ async def startup_event():
     migrate_database_v3()
     logger.info("✓ Database migrated v3")
 
+    migrate_database_v4()
+    logger.info("✓ Database migrated v4")
+
     asyncio.create_task(monitor_cdr())
     logger.info("✓ CDR monitoring task started")
 
@@ -654,6 +673,25 @@ def migrate_database_v3():
         cursor.execute('ALTER TABLE scheduled_calls ADD COLUMN max_ring_time INTEGER DEFAULT 45')
         conn.commit()
         logger.info("✓ Database migration v3 completed")
+
+    conn.close()
+
+
+def migrate_database_v4():
+    """Add callback-related columns to broadcasts table"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # Check if caller_id column exists in broadcasts
+    cursor.execute("PRAGMA table_info(broadcasts)")
+    columns = [column[1] for column in cursor.fetchall()]
+
+    if 'caller_id' not in columns:
+        logger.info("Migrating database: adding callback columns to broadcasts")
+        cursor.execute('ALTER TABLE broadcasts ADD COLUMN caller_id TEXT')
+        cursor.execute('ALTER TABLE broadcasts ADD COLUMN audio_file TEXT')
+        conn.commit()
+        logger.info("✓ Database migration v4 completed")
 
     conn.close()
 
@@ -1114,10 +1152,25 @@ async def process_broadcast(broadcast_id: str, request: BroadcastRequest):
         conn.close()
         return
     
-    # Update status
-    cursor.execute('UPDATE broadcasts SET status = ? WHERE broadcast_id = ?',
-                  ('processing', broadcast_id))
+    # Update status and store caller_id/audio_file for callback feature
+    cursor.execute('''
+        UPDATE broadcasts
+        SET status = ?, caller_id = ?, audio_file = ?
+        WHERE broadcast_id = ?
+    ''', ('processing', request.caller_id, audio_file, broadcast_id))
     conn.commit()
+
+    # Create callback entry if caller_id is provided (for call-back playback feature)
+    if request.caller_id:
+        # Set expiration to 7 days from now
+        expires_at = (datetime.now() + timedelta(days=7)).isoformat()
+        cursor.execute('''
+            INSERT INTO broadcast_callbacks
+            (caller_id, audio_file, broadcast_id, broadcast_name, expires_at, enabled)
+            VALUES (?, ?, ?, ?, ?, 1)
+        ''', (request.caller_id, audio_file, broadcast_id, request.name, expires_at))
+        conn.commit()
+        logger.info(f"📞 Callback enabled for caller ID {request.caller_id} -> {audio_file}")
     
     # Process calls with concurrency control
     semaphore = asyncio.Semaphore(request.concurrent_calls)
