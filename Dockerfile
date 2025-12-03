@@ -12,6 +12,7 @@ RUN apk add --no-cache \
     bash \
     espeak \
     sox \
+    ffmpeg \
     && rm -rf /var/cache/apk/*
 
 # Install Python packages
