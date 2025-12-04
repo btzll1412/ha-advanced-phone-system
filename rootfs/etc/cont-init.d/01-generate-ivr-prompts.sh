@@ -12,6 +12,11 @@ CUSTOM_DIR="/var/lib/asterisk/sounds/custom"
 mkdir -p "$IVR_DIR"
 mkdir -p "$CUSTOM_DIR"
 
+# Clear old prompts to regenerate with updated tempo (faster speech)
+# Only clear IVR system prompts, not user recordings
+rm -f "$IVR_DIR"/*.wav "$IVR_DIR"/*.sln "$IVR_DIR"/*.mp3 2>/dev/null || true
+bashio::log.info "Cleared old IVR prompts for regeneration"
+
 # Run the prompt generator
 cd /app
 python3 generate_ivr_prompts.py
