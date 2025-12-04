@@ -86,27 +86,37 @@ def get_group_by_index(index):
 def initiate_call(phone_numbers, recording_file, caller_id=None):
     """Initiate outbound calls via the API"""
     try:
-        api_url = "http://127.0.0.1:5000"
+        api_url = "http://127.0.0.1:8088/api"
 
         # Ensure phone_numbers is a list
         if isinstance(phone_numbers, str):
-            phone_numbers = [phone_numbers]
+            phone_numbers = [p.strip() for p in phone_numbers.split(',') if p.strip()]
+
+        if not phone_numbers:
+            agi_verbose("No phone numbers to call")
+            return False
 
         for phone in phone_numbers:
+            # Clean the phone number
+            phone_clean = str(phone).strip()
+            if not phone_clean:
+                continue
+
             payload = {
-                "phone_number": phone.strip(),
+                "phone_number": phone_clean,
                 "recording_file": recording_file,
                 "message": f"IVR recorded message: {recording_file}"
             }
             if caller_id:
                 payload["caller_id"] = caller_id
 
+            agi_verbose(f"Calling API: {api_url}/call with phone={phone_clean}")
             response = requests.post(
                 f"{api_url}/call",
                 json=payload,
                 timeout=30
             )
-            agi_verbose(f"Call initiated to {phone}: {response.status_code}")
+            agi_verbose(f"Call initiated to {phone_clean}: {response.status_code}")
 
         return True
     except Exception as e:

@@ -7,6 +7,7 @@ RUN apk add --no-cache \
     py3-pip \
     asterisk \
     asterisk-sample-config \
+    asterisk-sounds-en \
     curl \
     wget \
     bash \
