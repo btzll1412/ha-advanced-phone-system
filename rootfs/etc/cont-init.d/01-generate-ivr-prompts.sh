@@ -27,6 +27,15 @@ else
     bashio::log.warning "Some IVR prompts failed to generate - IVR may have limited functionality"
 fi
 
+# Generate beep sound if it doesn't exist (fallback if asterisk-sounds-en not available)
+SOUNDS_DIR="/var/lib/asterisk/sounds"
+if [ ! -f "$SOUNDS_DIR/beep.gsm" ] && [ ! -f "$SOUNDS_DIR/beep.wav" ] && [ ! -f "$SOUNDS_DIR/beep.ulaw" ]; then
+    bashio::log.info "Generating beep sound..."
+    # Generate a 0.2 second 1000Hz beep tone
+    sox -n -r 8000 -c 1 "$SOUNDS_DIR/beep.wav" synth 0.2 sine 1000 vol 0.5
+    chown asterisk:asterisk "$SOUNDS_DIR/beep.wav"
+fi
+
 # Set proper permissions
 chown -R asterisk:asterisk "$IVR_DIR"
 chown -R asterisk:asterisk "$CUSTOM_DIR"
