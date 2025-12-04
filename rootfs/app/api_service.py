@@ -32,9 +32,11 @@ WEB_AUTH_ENABLED = os.environ.get('WEB_AUTH_ENABLED', 'false').lower() == 'true'
 WEB_AUTH_USERNAME = os.environ.get('WEB_AUTH_USERNAME', 'admin')
 WEB_AUTH_PASSWORD = os.environ.get('WEB_AUTH_PASSWORD', 'admin')
 
-# Session storage (in-memory, tokens expire after 24 hours)
-active_sessions: Dict[str, datetime] = {}
+# Session storage (in-memory)
+# Format: {token: {"expires": datetime, "duration_seconds": int}}
+active_sessions: Dict[str, dict] = {}
 SESSION_DURATION = timedelta(hours=24)
+REMEMBER_ME_DURATION = timedelta(days=30)
 
 class CallDirection(str, Enum):
     INTERNAL = "internal"
@@ -98,8 +100,8 @@ def is_valid_session(session_token: str) -> bool:
     if not session_token or session_token not in active_sessions:
         return False
 
-    expiry = active_sessions[session_token]
-    if datetime.now() > expiry:
+    session_data = active_sessions[session_token]
+    if datetime.now() > session_data["expires"]:
         # Session expired, remove it
         del active_sessions[session_token]
         return False
@@ -107,17 +109,24 @@ def is_valid_session(session_token: str) -> bool:
     return True
 
 
-def create_session() -> str:
-    """Create a new session token"""
+def create_session(remember_me: bool = False) -> tuple:
+    """Create a new session token. Returns (token, duration_seconds)"""
     token = secrets.token_urlsafe(32)
-    active_sessions[token] = datetime.now() + SESSION_DURATION
-    return token
+    duration = REMEMBER_ME_DURATION if remember_me else SESSION_DURATION
+    duration_seconds = int(duration.total_seconds())
+
+    active_sessions[token] = {
+        "expires": datetime.now() + duration,
+        "duration_seconds": duration_seconds
+    }
+
+    return token, duration_seconds
 
 
 def cleanup_expired_sessions():
     """Remove expired sessions"""
     now = datetime.now()
-    expired = [token for token, expiry in active_sessions.items() if now > expiry]
+    expired = [token for token, data in active_sessions.items() if now > data["expires"]]
     for token in expired:
         del active_sessions[token]
 
@@ -159,18 +168,20 @@ async def do_login(request: Request, response: Response):
         body = await request.json()
         username = body.get("username", "")
         password = body.get("password", "")
+        remember_me = body.get("remember_me", False)
 
         if username == WEB_AUTH_USERNAME and password == WEB_AUTH_PASSWORD:
-            # Create session
-            session_token = create_session()
+            # Create session with appropriate duration
+            session_token, duration_seconds = create_session(remember_me=remember_me)
             response.set_cookie(
                 key="session_token",
                 value=session_token,
                 httponly=True,
-                max_age=int(SESSION_DURATION.total_seconds()),
+                max_age=duration_seconds,
                 samesite="strict"
             )
-            logger.info(f"User '{username}' logged in successfully")
+            duration_desc = "30 days" if remember_me else "24 hours"
+            logger.info(f"User '{username}' logged in successfully (session: {duration_desc})")
             return {"status": "success"}
         else:
             logger.warning(f"Failed login attempt for user '{username}'")
