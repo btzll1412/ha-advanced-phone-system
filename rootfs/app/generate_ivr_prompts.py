@@ -14,7 +14,7 @@ IVR_DIR = "/var/lib/asterisk/sounds/ivr"
 # All prompts needed for the IVR system
 PROMPTS = {
     # Main menu
-    "main-menu": "Welcome to the phone system. Press 1 to record a message. Press 2 to listen to your last recording. Press 3 to re-record. Press 4 to make an outbound call. Press 9 to repeat this menu. Press 0 to exit.",
+    "main-menu": "Welcome to the phone system. Press 1 to record a message. Press 2 to listen to your last recording. Press 3 to make an outbound call. Press 9 to repeat this menu. Press 0 to exit.",
 
     # Recording prompts
     "record-after-beep": "Please record your message after the beep. Press pound when finished.",
@@ -42,8 +42,11 @@ PROMPTS = {
     # Recording greeting for outbound
     "record-greeting-pound": "Please record your greeting after the beep. Press pound when finished.",
 
-    # Recording options
-    "recording-options": "Press 1 to listen to your recording. Press 2 to re-record. Press 3 to send out now. Press 4 to schedule for later. Press 9 to cancel.",
+    # Recording review options (after recording)
+    "recording-options": "Press 1 to listen to your recording. Press 2 to re-record. Press 3 to save. Press 9 to cancel.",
+
+    # Outbound recording options (for broadcasts)
+    "outbound-recording-options": "Press 1 to listen to your recording. Press 2 to re-record. Press 3 to send out now. Press 4 to schedule for later. Press 9 to cancel.",
 
     # Send now
     "message-sent": "Thank you. Your message is being sent now.",
