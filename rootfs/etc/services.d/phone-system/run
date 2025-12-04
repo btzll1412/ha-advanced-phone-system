@@ -542,6 +542,23 @@ fi
 
 # Start API service
 bashio::log.info "Starting API service..."
+
+# Get web authentication settings
+WEB_AUTH_ENABLED=$(bashio::config 'web_auth.enabled')
+WEB_AUTH_USERNAME=$(bashio::config 'web_auth.username')
+WEB_AUTH_PASSWORD=$(bashio::config 'web_auth.password')
+
+# Export auth settings as environment variables for the API
+export WEB_AUTH_ENABLED="${WEB_AUTH_ENABLED}"
+export WEB_AUTH_USERNAME="${WEB_AUTH_USERNAME}"
+export WEB_AUTH_PASSWORD="${WEB_AUTH_PASSWORD}"
+
+if [ "$WEB_AUTH_ENABLED" = "true" ]; then
+    bashio::log.info "Web authentication enabled (user: ${WEB_AUTH_USERNAME})"
+else
+    bashio::log.warning "Web authentication disabled - UI is accessible without login"
+fi
+
 cd /app
 python3 api_service.py &
 API_PID=$!

@@ -410,9 +410,16 @@
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>Advanced Phone System</h1>
-            <p>Manage calls, broadcasts, recordings, and contact groups</p>
+        <div class="header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h1>Advanced Phone System</h1>
+                <p>Manage calls, broadcasts, recordings, and contact groups</p>
+            </div>
+            <div id="auth-controls" style="display: none;">
+                <button onclick="logout()" class="btn btn-secondary btn-small" style="background: #6c757d;">
+                    🚪 Logout
+                </button>
+            </div>
         </div>
 
         <div class="tabs">
@@ -1001,6 +1008,54 @@
         let phoneNumbers = [];
         let groupContacts = [];
 
+        // ============================================
+        // AUTHENTICATION FUNCTIONS
+        // ============================================
+
+        async function checkAuthStatus() {
+            try {
+                const response = await fetch(`${API_URL}/api/auth/status`);
+                const data = await response.json();
+
+                if (data.auth_enabled) {
+                    document.getElementById('auth-controls').style.display = 'block';
+
+                    if (!data.authenticated) {
+                        window.location.href = '/login';
+                    }
+                }
+            } catch (error) {
+                console.error('Error checking auth status:', error);
+            }
+        }
+
+        async function logout() {
+            try {
+                await fetch(`${API_URL}/api/auth/logout`, { method: 'POST' });
+                window.location.href = '/login';
+            } catch (error) {
+                console.error('Error logging out:', error);
+                window.location.href = '/login';
+            }
+        }
+
+        // Handle 401 responses globally
+        async function fetchWithAuth(url, options = {}) {
+            const response = await fetch(url, options);
+
+            if (response.status === 401) {
+                // Redirect to login on authentication error
+                window.location.href = '/login';
+                throw new Error('Not authenticated');
+            }
+
+            return response;
+        }
+
+        // Check auth on page load
+        checkAuthStatus();
+
+        // ============================================
         // Tab switching
         function showTab(tabName) {
             document.querySelectorAll('.content').forEach(el => el.classList.add('hidden'));
