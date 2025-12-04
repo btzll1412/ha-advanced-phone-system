@@ -135,6 +135,13 @@
                 <input type="password" id="password" name="password" required autocomplete="current-password">
             </div>
 
+            <div class="form-group" style="margin-bottom: 25px;">
+                <label style="display: flex; align-items: center; cursor: pointer; font-weight: normal;">
+                    <input type="checkbox" id="remember-me" style="width: auto; margin-right: 10px;">
+                    Stay signed in for 30 days
+                </label>
+            </div>
+
             <button type="submit" class="btn" id="login-btn">Log In</button>
         </form>
     </div>
@@ -145,6 +152,7 @@
 
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
+            const rememberMe = document.getElementById('remember-me').checked;
             const alertEl = document.getElementById('alert');
             const loginBtn = document.getElementById('login-btn');
 
@@ -161,7 +169,7 @@
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ username, password })
+                    body: JSON.stringify({ username, password, remember_me: rememberMe })
                 });
 
                 if (response.ok) {

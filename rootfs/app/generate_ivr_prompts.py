@@ -83,8 +83,9 @@ def generate_prompt(name, text):
     wav_path = os.path.join(IVR_DIR, f"{name}.wav")
     sln_path = os.path.join(IVR_DIR, f"{name}.sln")
 
-    # Skip if already exists
-    if os.path.exists(wav_path) or os.path.exists(sln_path):
+    # Skip if already exists (unless FORCE_REGENERATE env var is set)
+    force_regen = os.environ.get('FORCE_REGENERATE_PROMPTS', '').lower() in ('1', 'true', 'yes')
+    if not force_regen and (os.path.exists(wav_path) or os.path.exists(sln_path)):
         print(f"Prompt already exists: {name}")
         return True
 
@@ -94,16 +95,18 @@ def generate_prompt(name, text):
         tts.save(mp3_path)
 
         # Convert to WAV format suitable for Asterisk (8kHz, mono, 16-bit)
+        # Speed up by 25% using tempo for faster, clearer prompts
         # Try sox first, then ffmpeg
         try:
             subprocess.run([
-                'sox', mp3_path, '-r', '8000', '-c', '1', '-b', '16', wav_path
+                'sox', mp3_path, '-r', '8000', '-c', '1', '-b', '16', wav_path, 'tempo', '1.25'
             ], check=True, capture_output=True)
         except (subprocess.CalledProcessError, FileNotFoundError):
-            # Fallback to ffmpeg
+            # Fallback to ffmpeg (atempo filter for speed)
             subprocess.run([
                 'ffmpeg', '-y', '-i', mp3_path,
                 '-ar', '8000', '-ac', '1', '-acodec', 'pcm_s16le',
+                '-filter:a', 'atempo=1.25',
                 wav_path
             ], check=True, capture_output=True)
 
