@@ -40,10 +40,22 @@ else
 fi
 
 # Create directories
-mkdir -p /var/lib/asterisk/sounds/custom
 mkdir -p /var/spool/asterisk/outgoing
 mkdir -p /data/recordings
 mkdir -p /data/database
+
+# Symlink custom sounds to persistent storage so recordings survive restarts
+# Remove existing directory if it exists (not a symlink)
+if [ -d "/var/lib/asterisk/sounds/custom" ] && [ ! -L "/var/lib/asterisk/sounds/custom" ]; then
+    # Move any existing files to persistent storage
+    cp -a /var/lib/asterisk/sounds/custom/* /data/recordings/ 2>/dev/null || true
+    rm -rf /var/lib/asterisk/sounds/custom
+fi
+# Create symlink if it doesn't exist
+if [ ! -L "/var/lib/asterisk/sounds/custom" ]; then
+    ln -sf /data/recordings /var/lib/asterisk/sounds/custom
+    bashio::log.info "Linked /var/lib/asterisk/sounds/custom -> /data/recordings for persistence"
+fi
 
 # Generate Asterisk sip.conf
 bashio::log.info "Generating Asterisk configuration..."

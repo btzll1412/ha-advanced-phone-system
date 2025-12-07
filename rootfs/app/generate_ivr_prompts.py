@@ -71,7 +71,7 @@ PROMPTS = {
     "playing-broadcast-history": "Playing your broadcast message history, starting with the most recent.",
     "end-of-messages": "End of messages.",
     "no-messages": "There are no messages available for this number.",
-    "no-recordings": "There are no recordings available.",
+    "no-recordings": "There are no recordings available for your phone number.",
     "press-star-admin": "Press star for admin access.",
 
     # Admin PIN authentication prompts

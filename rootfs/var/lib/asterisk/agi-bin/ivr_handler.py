@@ -389,14 +389,14 @@ def main():
             contact_name = f"Contact-{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
             # Insert the contact into group_members table
+            # Schema: id, group_id, phone_number, contact_name
             cursor.execute('''
-                INSERT INTO group_members (group_id, name, phone_number, created_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO group_members (group_id, phone_number, contact_name)
+                VALUES (?, ?, ?)
             ''', (
                 int(group_id),
-                contact_name,
                 phone_number,
-                datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+                contact_name
             ))
 
             conn.commit()
