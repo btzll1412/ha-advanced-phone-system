@@ -59,6 +59,45 @@ def get_db_connection():
         db_path = '/tmp/phone_system.db'
     return sqlite3.connect(db_path)
 
+def parse_phone_numbers(phone_input):
+    """Parse phone numbers from various input formats into a list of strings.
+
+    Handles:
+    - Single number as string: "8455021412" -> ["8455021412"]
+    - JSON array: '["8455021412", "8455021413"]' -> ["8455021412", "8455021413"]
+    - Comma-separated: "8455021412,8455021413" -> ["8455021412", "8455021413"]
+    - Integer (from json.loads): 8455021412 -> ["8455021412"]
+    """
+    if not phone_input:
+        return []
+
+    # If it's already a list, convert all items to strings
+    if isinstance(phone_input, list):
+        return [str(p).strip() for p in phone_input if str(p).strip()]
+
+    # If it's an int or float, convert to string
+    if isinstance(phone_input, (int, float)):
+        return [str(int(phone_input))]
+
+    # It's a string - try to parse as JSON first
+    phone_str = str(phone_input).strip()
+
+    try:
+        parsed = json.loads(phone_str)
+        # json.loads might return int, list, or other types
+        if isinstance(parsed, list):
+            return [str(p).strip() for p in parsed if str(p).strip()]
+        elif isinstance(parsed, (int, float)):
+            return [str(int(parsed))]
+        else:
+            return [str(parsed).strip()] if str(parsed).strip() else []
+    except (json.JSONDecodeError, ValueError):
+        # Not valid JSON - treat as comma-separated or single number
+        if ',' in phone_str:
+            return [p.strip() for p in phone_str.split(',') if p.strip()]
+        else:
+            return [phone_str] if phone_str else []
+
 def get_groups():
     """Get all groups from database"""
     try:
@@ -84,20 +123,25 @@ def get_group_by_index(index):
         return None
 
 def initiate_call(phone_numbers, recording_file, caller_id=None):
-    """Initiate outbound calls via the API"""
+    """Initiate outbound calls via the API.
+
+    Args:
+        phone_numbers: List of phone numbers (already parsed by parse_phone_numbers)
+        recording_file: Path to the audio file to play
+        caller_id: Optional caller ID to use
+    """
     try:
         api_url = "http://127.0.0.1:8088/api"
 
-        # Ensure phone_numbers is a list
-        if isinstance(phone_numbers, str):
-            phone_numbers = [p.strip() for p in phone_numbers.split(',') if p.strip()]
+        # Ensure phone_numbers is a list (should already be from parse_phone_numbers)
+        if not isinstance(phone_numbers, list):
+            phone_numbers = parse_phone_numbers(phone_numbers)
 
         if not phone_numbers:
             agi_verbose("No phone numbers to call")
             return False
 
         for phone in phone_numbers:
-            # Clean the phone number
             phone_clean = str(phone).strip()
             if not phone_clean:
                 continue
@@ -116,7 +160,7 @@ def initiate_call(phone_numbers, recording_file, caller_id=None):
                 json=payload,
                 timeout=30
             )
-            agi_verbose(f"Call initiated to {phone_clean}: {response.status_code}")
+            agi_verbose(f"Call initiated to {phone_clean}: status={response.status_code}")
 
         return True
     except Exception as e:
@@ -210,12 +254,10 @@ def main():
         recording_file = agi_get_variable("IVR_RECORDING_FILE")
         caller_id = agi_get_variable("IVR_CALLER_ID")
 
-        # Parse phone numbers (could be JSON array or single number)
-        try:
-            phones = json.loads(phone_numbers)
-        except:
-            phones = [phone_numbers]
+        # Parse phone numbers - ensure we always get a list of strings
+        phones = parse_phone_numbers(phone_numbers)
 
+        agi_verbose(f"Parsed phones: {phones}, recording: {recording_file}")
         success = initiate_call(phones, recording_file, caller_id)
         agi_set_variable("CALL_INITIATED", "1" if success else "0")
 
@@ -227,11 +269,8 @@ def main():
         caller_id = agi_get_variable("IVR_CALLER_ID")
         call_name = agi_get_variable("IVR_CALL_NAME") or "IVR Scheduled Call"
 
-        # Parse phone numbers
-        try:
-            phones = json.loads(phone_numbers)
-        except:
-            phones = [phone_numbers]
+        # Parse phone numbers - ensure we always get a list of strings
+        phones = parse_phone_numbers(phone_numbers)
 
         success = schedule_call(phones, recording_file, schedule_time, call_name, caller_id)
         agi_set_variable("CALL_SCHEDULED", "1" if success else "0")
