@@ -2457,90 +2457,94 @@ function applyCallFilters() {
     const dateEnd = document.getElementById('filter-date-end').value;
     const durationMin = document.getElementById('filter-duration-min').value;
     const durationMax = document.getElementById('filter-duration-max').value;
-    
+
     let url = '/api/call_records?limit=500';
     if (typeFilter) url += `&call_type=${typeFilter}`;
-    
+
     fetch(url)
         .then(r => r.json())
-        .then(records => {
-            let filtered = records;
-            
+        .then(data => {
+            // API returns {calls: [...], total: n}
+            let filtered = data.calls || [];
+
             if (extFilter) {
                 filtered = filtered.filter(r => r.extension === extFilter);
             }
-            
+
             if (callerIdFilter) {
                 filtered = filtered.filter(r => r.caller_id === callerIdFilter);
             }
-            
+
             if (sourceFilter) {
-                filtered = filtered.filter(r => 
-                    r.source_number && r.source_number.includes(sourceFilter)
+                filtered = filtered.filter(r =>
+                    (r.from && r.from.includes(sourceFilter)) ||
+                    (r.caller_id && r.caller_id.includes(sourceFilter))
                 );
             }
-            
+
             if (destFilter) {
-                filtered = filtered.filter(r => 
-                    r.destination_number && r.destination_number.includes(destFilter)
+                filtered = filtered.filter(r =>
+                    r.to && r.to.includes(destFilter)
                 );
             }
-            
+
             if (dateStart) {
                 const startDate = new Date(dateStart);
                 startDate.setHours(0, 0, 0, 0);
                 filtered = filtered.filter(r => {
-                    const recordDate = new Date(r.created_at);
+                    const recordDate = new Date(r.start_time);
                     return recordDate >= startDate;
                 });
             }
-            
+
             if (dateEnd) {
                 const endDate = new Date(dateEnd);
                 endDate.setHours(23, 59, 59, 999);
                 filtered = filtered.filter(r => {
-                    const recordDate = new Date(r.created_at);
+                    const recordDate = new Date(r.start_time);
                     return recordDate <= endDate;
                 });
             }
-            
+
             if (durationMin) {
                 const minDur = parseInt(durationMin);
-                filtered = filtered.filter(r => parseInt(r.billsec || 0) >= minDur);
+                filtered = filtered.filter(r => parseInt(r.talk_time || 0) >= minDur);
             }
-            
+
             if (durationMax) {
                 const maxDur = parseInt(durationMax);
-                filtered = filtered.filter(r => parseInt(r.billsec || 0) <= maxDur);
+                filtered = filtered.filter(r => parseInt(r.talk_time || 0) <= maxDur);
             }
-            
+
             if (globalSearch) {
                 filtered = filtered.filter(r => {
                     const searchableText = [
-                        r.source_number,
-                        r.destination_number,
+                        r.from,
+                        r.to,
                         r.caller_id,
                         r.extension,
                         r.call_type,
                         r.direction,
                         r.disposition,
                         r.uniqueid,
-                        r.context
+                        r.context,
+                        r.answer_type,
+                        r.amd_status
                     ].filter(Boolean).join(' ').toLowerCase();
-                    
+
                     return searchableText.includes(globalSearch);
                 });
             }
-            
+
             if (dispFilter) {
                 filtered = filtered.filter(r => {
-                    const billsec = parseInt(r.billsec) || 0;
+                    const talkTime = parseInt(r.talk_time) || 0;
                     const duration = parseInt(r.duration) || 0;
-                    
+
                     if (dispFilter === 'ANSWERED') {
-                        return billsec > 0;
+                        return talkTime > 0 || r.disposition === 'ANSWERED';
                     } else if (dispFilter === 'VOICEMAIL') {
-                        return billsec === 0 && duration > 0;
+                        return r.amd_status === 'MACHINE' || (talkTime === 0 && duration > 0);
                     } else if (dispFilter === 'NO ANSWER') {
                         return r.disposition === 'NO ANSWER';
                     } else if (dispFilter === 'BUSY') {
@@ -2549,9 +2553,12 @@ function applyCallFilters() {
                     return true;
                 });
             }
-            
+
             currentFilteredRecords = filtered;
             displayCallRecords(filtered);
+        })
+        .catch(error => {
+            console.error('Error applying filters:', error);
         });
 }
 function clearCallFilters() {

@@ -14,7 +14,7 @@ IVR_DIR = "/var/lib/asterisk/sounds/ivr"
 # All prompts needed for the IVR system
 PROMPTS = {
     # Main menu
-    "main-menu": "Welcome to the phone system. Press 1 to record a message. Press 2 to listen to your last recording. Press 3 to make an outbound call. Press 9 to repeat this menu. Press 0 to exit.",
+    "main-menu": "Welcome to the phone system. Press 1 to record a message. Press 2 to listen to your last recording. Press 3 to make an outbound call. Press 4 to add a contact to a group. Press 9 to repeat this menu. Press 0 to exit.",
 
     # Recording prompts
     "record-after-beep": "Please record your message after the beep. Press pound when finished.",
@@ -79,6 +79,13 @@ PROMPTS = {
     "access-granted": "Access granted.",
     "incorrect-pin": "Incorrect PIN. Please try again.",
     "too-many-attempts": "Too many incorrect attempts. Access denied.",
+
+    # Add contact to group prompts
+    "no-groups-found": "No groups are configured. Please create groups in the web interface first.",
+    "you-selected": "You selected",
+    "press-1-confirm": "Press 1 to confirm, or press 2 to re-enter.",
+    "contact-added": "Contact added successfully.",
+    "error-adding-contact": "There was an error adding the contact. Please try again.",
 }
 
 
