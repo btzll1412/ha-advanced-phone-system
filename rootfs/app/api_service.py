@@ -1154,6 +1154,24 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+def get_default_did() -> Optional[str]:
+    """Get the default DID (caller ID) from the database.
+
+    Returns the phone number of the default DID, or None if not set.
+    """
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT phone_number FROM dids WHERE is_default = 1 LIMIT 1')
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return row['phone_number']
+        return None
+    except Exception as e:
+        logger.error(f"Error getting default DID: {e}")
+        return None
+
 async def generate_tts(text: str) -> Optional[str]:
     """Generate TTS audio file using Google TTS"""
     try:
@@ -1496,25 +1514,33 @@ async def make_call(request: Request):
         
         
         # ✅ FLEXIBLE CALLER ID LOGIC
-        # Priority: 1. Custom from request, 2. Environment, 3. Config file, 4. Fallback
+        # Priority: 1. Custom from request, 2. Default DID from DB, 3. Environment, 4. Config file
         if custom_caller_id:
             # Use caller ID from API request
             caller_number = custom_caller_id
             logger.info(f"🆔 Using CUSTOM Caller ID from request: {caller_number}")
         else:
-            # Use default from config
-            caller_number = os.getenv('CALLER_NUMBER', '')
-            
-            # If not in env, try to get from add-on config
-            if not caller_number:
-                try:
-                    with open('/data/options.json', 'r') as f:
-                        options = json.load(f)
-                        caller_number = options.get('sip_trunk', {}).get('caller_number', '')
-                except (FileNotFoundError, json.JSONDecodeError, KeyError):
-                    pass
-            
-            logger.info(f"🆔 Using DEFAULT Caller ID from config: {caller_number}")
+            # Try to get default DID from database (system settings)
+            caller_number = get_default_did()
+            if caller_number:
+                logger.info(f"🆔 Using DEFAULT DID from settings: {caller_number}")
+            else:
+                # Fallback to environment variable
+                caller_number = os.getenv('CALLER_NUMBER', '')
+
+                # If not in env, try to get from add-on config
+                if not caller_number:
+                    try:
+                        with open('/data/options.json', 'r') as f:
+                            options = json.load(f)
+                            caller_number = options.get('sip_trunk', {}).get('caller_number', '')
+                    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+                        pass
+
+                if caller_number:
+                    logger.info(f"🆔 Using Caller ID from addon config: {caller_number}")
+                else:
+                    logger.warning(f"⚠️ No default DID or caller ID configured")
         
         # Ensure E.164 format
         if caller_number and not caller_number.startswith('+'):
