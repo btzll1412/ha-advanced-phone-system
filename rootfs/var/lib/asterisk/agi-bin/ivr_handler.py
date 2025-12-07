@@ -374,6 +374,40 @@ def main():
             agi_set_variable("DATETIME_VALID", "0")
             agi_verbose("Datetime input too short")
 
+    elif action == "add_contact_to_group":
+        # Add a phone number to a group
+        phone_number = agi_get_variable("CONTACT_PHONE")
+        group_id = agi_get_variable("CONTACT_GROUP_ID")
+
+        agi_verbose(f"Adding contact {phone_number} to group {group_id}")
+
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # Generate a name based on current timestamp
+            contact_name = f"Contact-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+
+            # Insert the contact into group_members table
+            cursor.execute('''
+                INSERT INTO group_members (group_id, name, phone_number, created_at)
+                VALUES (?, ?, ?, ?)
+            ''', (
+                int(group_id),
+                contact_name,
+                phone_number,
+                datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            ))
+
+            conn.commit()
+            conn.close()
+
+            agi_set_variable("CONTACT_ADDED", "1")
+            agi_verbose(f"Contact added successfully: {contact_name} ({phone_number}) to group {group_id}")
+        except Exception as e:
+            agi_set_variable("CONTACT_ADDED", "0")
+            agi_verbose(f"Error adding contact: {e}")
+
     else:
         agi_verbose(f"Unknown action: {action}")
         sys.exit(1)
