@@ -560,8 +560,31 @@ async def process_cdr_record(row):
         direction = "unknown"
         extension = None
 
-        # Determine based on context
-        if context == "outbound-playback":
+        # First, check userfield_type - this gives us the TRUE call direction
+        # even if the call ended in a different context (e.g., inbound call that went through IVR)
+        if userfield_type == "INBOUND":
+            call_type = "inbound"
+            direction = "inbound"
+            if userfield_caller:
+                source = userfield_caller
+                caller_id = userfield_caller
+            if userfield_dest:
+                dest = userfield_dest  # The DID that was called
+            extension = userfield_context  # e.g., "callback"
+            logger.info(f"📞 Inbound call (from userfield): {source} → DID:{dest}")
+        elif userfield_type == "OUTBOUND":
+            call_type = "outbound"
+            direction = "outbound"
+            if userfield_caller:
+                caller_id = userfield_caller
+                source = "System"
+            if userfield_dest:
+                dest = userfield_dest
+            extension = userfield_context  # e.g., "broadcast"
+            logger.info(f"📤 Outbound call (from userfield): {caller_id} → {dest}")
+
+        # If no userfield, determine based on context
+        elif context == "outbound-playback":
             call_type = "outbound"
             direction = "outbound"
             logger.info(f"🔍 Processing outbound-playback: channel={channel}")
@@ -608,18 +631,9 @@ async def process_cdr_record(row):
                 call_type = "outbound"
                 direction = "outbound"
         elif context == "inbound":
+            # Fallback if userfield wasn't set
             call_type = "inbound"
             direction = "inbound"
-            # Use userfield data for accurate caller/DID info
-            if userfield_type == "INBOUND":
-                # For inbound: source=caller, dest=DID that was called
-                if userfield_caller:
-                    source = userfield_caller
-                    caller_id = userfield_caller
-                if userfield_dest:
-                    dest = userfield_dest  # The DID that was called
-                extension = userfield_context  # e.g., "callback"
-                logger.info(f"📞 Inbound call: {source} → DID:{dest} (context: {extension})")
         elif context == "broadcast":
             call_type = "broadcast"
             direction = "outbound"
@@ -1471,17 +1485,23 @@ async def process_broadcast(broadcast_id: str, request: BroadcastRequest):
     ''', ('processing', effective_caller_id, audio_file, broadcast_id))
     conn.commit()
 
-    # Create callback entry if caller_id is provided (for call-back playback feature)
-    if effective_caller_id:
-        # Set expiration to 7 days from now
-        expires_at = (datetime.now() + timedelta(days=7)).isoformat()
+    # Create callback entries for each recipient (for call-back playback feature)
+    # Each recipient who receives the broadcast can call back and hear the message
+    # Set expiration to 7 days from now
+    expires_at = (datetime.now() + timedelta(days=7)).isoformat()
+    for recipient_number in phone_numbers:
+        # Normalize recipient number - store last 10 digits for matching
+        normalized_recipient = ''.join(c for c in recipient_number if c.isdigit())
+        if len(normalized_recipient) > 10:
+            normalized_recipient = normalized_recipient[-10:]
+
         cursor.execute('''
             INSERT INTO broadcast_callbacks
             (caller_id, audio_file, broadcast_id, broadcast_name, expires_at, enabled)
             VALUES (?, ?, ?, ?, ?, 1)
-        ''', (effective_caller_id, audio_file, broadcast_id, request.name, expires_at))
-        conn.commit()
-        logger.info(f"📞 Callback enabled for caller ID {effective_caller_id} -> {audio_file}")
+        ''', (normalized_recipient, audio_file, broadcast_id, request.name, expires_at))
+    conn.commit()
+    logger.info(f"📞 Callbacks created for {len(phone_numbers)} recipients -> {audio_file}")
     
     # Process calls with concurrency control
     semaphore = asyncio.Semaphore(request.concurrent_calls)
@@ -1691,6 +1711,30 @@ Setvar: CUSTOM_CALLERID={caller_number or ''}
             group_name=None,
             broadcast_id=None
         )
+
+        # Create callback entry so recipient can call back and hear the message
+        try:
+            conn = get_db()
+            cursor = conn.cursor()
+            # Normalize recipient number for matching
+            normalized_recipient = ''.join(c for c in formatted_number if c.isdigit())
+            if len(normalized_recipient) > 10:
+                normalized_recipient = normalized_recipient[-10:]
+            expires_at = (datetime.now() + timedelta(days=7)).isoformat()
+
+            # Get full audio path for callback
+            full_audio_path = f"/var/lib/asterisk/sounds/custom/{audio_file}.wav" if not audio_file.startswith('/') else audio_file
+
+            cursor.execute('''
+                INSERT INTO broadcast_callbacks
+                (caller_id, audio_file, broadcast_id, broadcast_name, expires_at, enabled)
+                VALUES (?, ?, ?, ?, ?, 1)
+            ''', (normalized_recipient, full_audio_path, call_id, f"Call to {formatted_number}", expires_at))
+            conn.commit()
+            conn.close()
+            logger.info(f"📞 Callback created for {normalized_recipient}")
+        except Exception as cb_err:
+            logger.warning(f"Could not create callback: {cb_err}")
 
         return {
             "status": "success",
@@ -3094,6 +3138,108 @@ async def set_default_did(did_id: int):
         raise
     except Exception as e:
         logger.error(f"Error setting default DID: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# SIP TRUNK STATUS
+# ============================================================================
+
+@app.get("/api/sip/status")
+async def get_sip_status():
+    """Get SIP trunk registration status"""
+    try:
+        # Check SIP registrations using Asterisk CLI
+        result = subprocess.run(
+            ['asterisk', '-rx', 'sip show registry'],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+
+        registrations = []
+        lines = result.stdout.strip().split('\n')
+
+        for line in lines:
+            if 'trunk' in line.lower() or 'sip.' in line.lower() or ':5060' in line:
+                parts = line.split()
+                if len(parts) >= 5:
+                    registrations.append({
+                        "host": parts[0] if parts else "Unknown",
+                        "username": parts[2] if len(parts) > 2 else "Unknown",
+                        "state": parts[-1] if parts else "Unknown"
+                    })
+
+        # Check SIP peers
+        result_peers = subprocess.run(
+            ['asterisk', '-rx', 'sip show peers'],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+
+        peers = []
+        peer_lines = result_peers.stdout.strip().split('\n')
+        for line in peer_lines:
+            if 'trunk_main' in line.lower():
+                parts = line.split()
+                if len(parts) >= 3:
+                    peers.append({
+                        "name": parts[0],
+                        "host": parts[1] if len(parts) > 1 else "Unknown",
+                        "status": parts[-1] if parts else "Unknown"
+                    })
+
+        # Determine overall status
+        is_registered = any('Registered' in str(r.get('state', '')) for r in registrations)
+        is_reachable = any('OK' in str(p.get('status', '')) for p in peers)
+
+        return {
+            "status": "connected" if is_registered else "disconnected",
+            "registered": is_registered,
+            "reachable": is_reachable,
+            "registrations": registrations,
+            "peers": peers,
+            "raw_registry": result.stdout,
+            "raw_peers": result_peers.stdout
+        }
+
+    except subprocess.TimeoutExpired:
+        logger.error("Asterisk CLI timed out")
+        return {"status": "error", "message": "Asterisk not responding"}
+    except Exception as e:
+        logger.error(f"Error getting SIP status: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/sip/reload")
+async def reload_sip():
+    """Reload SIP configuration to re-register trunks"""
+    try:
+        # Reload SIP module
+        result = subprocess.run(
+            ['asterisk', '-rx', 'sip reload'],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        logger.info("🔄 SIP configuration reloaded")
+
+        # Wait a moment for registration
+        await asyncio.sleep(3)
+
+        # Check new status
+        status = await get_sip_status()
+
+        return {
+            "status": "success",
+            "message": "SIP configuration reloaded",
+            "sip_status": status
+        }
+
+    except Exception as e:
+        logger.error(f"Error reloading SIP: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

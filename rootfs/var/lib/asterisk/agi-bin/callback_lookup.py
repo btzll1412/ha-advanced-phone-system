@@ -127,34 +127,29 @@ def main():
     # Read AGI environment
     agi_read()
 
-    # Get the called number (DID) from the AGI environment or channel variable
-    # agi_extension is the number that was dialed
-    called_number = agi_env.get('agi_extension', '')
+    # Get the CALLER's number (who is calling in) - this is who we look up callbacks for
+    # When a broadcast recipient calls back, we want to play them the message
+    caller_number = agi_env.get('agi_callerid', '')
 
-    # Also try getting from EXTEN variable
-    if not called_number or called_number == 's':
-        called_number = agi_get_variable('EXTEN')
+    # Also try from CALLERID(num) variable
+    if not caller_number:
+        caller_number = agi_get_variable('CALLERID(num)')
 
-    # Also try from CALLERID(dnid) - the dialed number
-    if not called_number or called_number == 's':
-        called_number = agi_get_variable('CALLERID(dnid)')
+    # Get the called DID for logging purposes
+    called_did = agi_env.get('agi_extension', '') or agi_get_variable('EXTEN')
 
-    # Also check the DID variable if set by the SIP trunk
-    if not called_number or called_number == 's':
-        called_number = agi_get_variable('DID')
+    agi_verbose(f"Callback lookup - caller: {caller_number}, DID: {called_did}")
 
-    agi_verbose(f"Callback lookup for called number: {called_number}")
-
-    if not called_number:
-        agi_verbose("No called number available")
+    if not caller_number:
+        agi_verbose("No caller number available")
         agi_set_variable("CALLBACK_COUNT", "0")
         return
 
-    # Look up callbacks
-    callbacks = lookup_callbacks(called_number)
+    # Look up callbacks by caller's number (the recipient of a broadcast calling back)
+    callbacks = lookup_callbacks(caller_number)
 
     if not callbacks:
-        agi_verbose(f"No callbacks found for {called_number}")
+        agi_verbose(f"No callbacks found for {caller_number}")
         agi_set_variable("CALLBACK_COUNT", "0")
         return
 

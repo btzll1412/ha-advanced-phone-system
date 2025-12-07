@@ -49,6 +49,17 @@ allowguest=no
 alwaysauthreject=yes
 nat=force_rport,comedia
 externrefresh=10
+
+; Registration stability settings
+registertimeout=20
+registerattempts=0
+maxexpirey=3600
+defaultexpirey=120
+minexpirey=60
+
+; Qualify settings for trunk monitoring
+qualifyfreq=60
+qualifygap=100
 EOF
 
 # Add externaddr and localnet if we detected an external IP
@@ -99,7 +110,7 @@ if [ "$SIP_ENABLED" = "true" ]; then
     # Build registration string separately to avoid escape issues
     REG_STRING="${SIP_USER}:${SIP_PASS}@${SIP_HOST}:${SIP_PORT}/${SIP_USER}"
     
-    # Write SIP trunk config - removed fromuser line
+    # Write SIP trunk config - with stability improvements
     {
         echo ""
         echo "; SIP Trunk Registration"
@@ -116,8 +127,12 @@ if [ "$SIP_ENABLED" = "true" ]; then
         echo "context=inbound"
         echo "dtmfmode=rfc2833"
         echo "canreinvite=no"
+        echo "directmedia=no"
         echo "qualify=yes"
+        echo "qualifyfreq=60"
         echo "nat=force_rport,comedia"
+        echo "sendrpid=pai"
+        echo "rpid_update=yes"
         echo ""
     } >> /etc/asterisk/sip.conf
     bashio::log.info "✓ SIP trunk configured (user: ${SIP_USER})"

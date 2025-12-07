@@ -11,6 +11,11 @@ import json
 import requests
 from datetime import datetime
 import re
+import subprocess
+import hashlib
+
+# TTS cache directory
+TTS_CACHE_DIR = "/var/lib/asterisk/sounds/tts_cache"
 
 # AGI environment variables
 agi_env = {}
@@ -48,6 +53,56 @@ def agi_get_variable(name):
         if match:
             return match.group(1)
     return ''
+
+def generate_tts_audio(text, name_hint=None):
+    """Generate TTS audio file for given text. Returns the base filename (without extension) for Asterisk.
+
+    Uses caching based on text hash to avoid regenerating the same audio.
+    """
+    try:
+        # Create cache directory if it doesn't exist
+        os.makedirs(TTS_CACHE_DIR, exist_ok=True)
+
+        # Create a hash-based filename for caching
+        text_hash = hashlib.md5(text.encode()).hexdigest()[:12]
+        safe_name = name_hint or "tts"
+        safe_name = re.sub(r'[^a-zA-Z0-9]', '_', safe_name)[:20]
+        base_filename = f"{safe_name}_{text_hash}"
+
+        wav_path = os.path.join(TTS_CACHE_DIR, f"{base_filename}.wav")
+        ulaw_path = os.path.join(TTS_CACHE_DIR, f"{base_filename}.ulaw")
+
+        # Check if already cached
+        if os.path.exists(wav_path) and os.path.exists(ulaw_path):
+            return os.path.join(TTS_CACHE_DIR, base_filename)
+
+        # Generate using gTTS
+        from gtts import gTTS
+        mp3_path = os.path.join(TTS_CACHE_DIR, f"{base_filename}.mp3")
+
+        tts = gTTS(text=text, lang='en', slow=False)
+        tts.save(mp3_path)
+
+        # Convert to WAV (8kHz mono) with tempo speedup
+        subprocess.run([
+            'sox', mp3_path, '-r', '8000', '-c', '1', '-b', '16', wav_path, 'tempo', '1.25'
+        ], check=True, capture_output=True)
+
+        # Convert to ulaw for SIP trunk compatibility
+        subprocess.run([
+            'sox', wav_path, '-t', 'ul', '-r', '8000', '-c', '1', ulaw_path
+        ], check=True, capture_output=True)
+
+        # Clean up MP3
+        if os.path.exists(mp3_path):
+            os.remove(mp3_path)
+
+        # Return path without extension (Asterisk will find the right format)
+        return os.path.join(TTS_CACHE_DIR, base_filename)
+
+    except Exception as e:
+        agi_verbose(f"Error generating TTS: {e}")
+        return None
 
 def get_db_connection():
     """Get database connection"""
@@ -236,6 +291,13 @@ def main():
             agi_set_variable(f"GROUP_{i}_NAME", name)
             agi_set_variable(f"GROUP_{i}_CID", caller_id or "")
             agi_set_variable(f"GROUP_{i}_PHONES", phone_numbers or "")
+
+            # Generate TTS audio for group name
+            tts_path = generate_tts_audio(name, f"group_{group_id}")
+            if tts_path:
+                agi_set_variable(f"GROUP_{i}_AUDIO", tts_path)
+            else:
+                agi_set_variable(f"GROUP_{i}_AUDIO", "")
 
         agi_verbose(f"Found {len(groups)} groups")
 
