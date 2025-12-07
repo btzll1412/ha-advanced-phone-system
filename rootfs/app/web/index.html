@@ -1000,6 +1000,46 @@
                     </table>
                 </div>
             </div>
+
+            <!-- Backup & Restore Section -->
+            <div style="background: #f8f9fa; padding: 25px; border-radius: 10px; border-left: 4px solid #6c757d; margin-bottom: 20px;">
+                <h3 style="margin-bottom: 15px; color: #333;">💾 Backup & Restore</h3>
+                <p style="color: #666; margin-bottom: 15px;">
+                    Export your entire system configuration (groups, DIDs, scheduled calls, broadcasts) to a backup file,
+                    or restore from a previous backup.
+                </p>
+
+                <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                    <!-- Export Section -->
+                    <div style="flex: 1; min-width: 250px; background: white; padding: 20px; border-radius: 8px;">
+                        <h4 style="margin-bottom: 10px; color: #28a745;">📤 Export Backup</h4>
+                        <p style="font-size: 14px; color: #666; margin-bottom: 15px;">
+                            Download a JSON file containing all your system data.
+                        </p>
+                        <button onclick="downloadBackup()" class="btn" style="width: 100%;">
+                            ⬇️ Download Backup
+                        </button>
+                    </div>
+
+                    <!-- Import Section -->
+                    <div style="flex: 1; min-width: 250px; background: white; padding: 20px; border-radius: 8px;">
+                        <h4 style="margin-bottom: 10px; color: #dc3545;">📥 Restore Backup</h4>
+                        <p style="font-size: 14px; color: #666; margin-bottom: 15px;">
+                            Upload a backup file to restore your configuration.
+                        </p>
+                        <input type="file" id="backup-file-input" accept=".json" style="display: none;" onchange="handleBackupFile(this)">
+                        <button onclick="document.getElementById('backup-file-input').click()" class="btn btn-secondary" style="width: 100%;">
+                            📁 Select Backup File
+                        </button>
+                        <div id="backup-file-name" style="margin-top: 10px; font-size: 14px; color: #666;"></div>
+                        <button id="restore-btn" onclick="restoreBackup()" class="btn" style="width: 100%; margin-top: 10px; display: none; background: #dc3545;">
+                            ⚠️ Restore Backup
+                        </button>
+                    </div>
+                </div>
+
+                <div id="backup-status" style="margin-top: 15px; padding: 10px; border-radius: 5px; display: none;"></div>
+            </div>
         </div>
     </div>
 
@@ -2942,6 +2982,132 @@ function exportGroupCSV(groupName) {
                 return document.getElementById(customInputId).value.trim();
             }
             return select.value;
+        }
+
+        // Backup & Restore functions
+        let selectedBackupFile = null;
+
+        async function downloadBackup() {
+            try {
+                const statusEl = document.getElementById('backup-status');
+                statusEl.style.display = 'block';
+                statusEl.style.background = '#e7f3ff';
+                statusEl.style.color = '#0056b3';
+                statusEl.textContent = 'Creating backup...';
+
+                const response = await fetch(`${API_URL}/api/backup`);
+                if (!response.ok) {
+                    throw new Error('Failed to create backup');
+                }
+
+                // Get filename from header or generate one
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let filename = 'phone_system_backup.json';
+                if (contentDisposition) {
+                    const match = contentDisposition.match(/filename=([^;]+)/);
+                    if (match) filename = match[1];
+                }
+
+                // Download the file
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+
+                statusEl.style.background = '#d4edda';
+                statusEl.style.color = '#155724';
+                statusEl.textContent = 'Backup downloaded successfully!';
+                setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+
+            } catch (error) {
+                const statusEl = document.getElementById('backup-status');
+                statusEl.style.display = 'block';
+                statusEl.style.background = '#f8d7da';
+                statusEl.style.color = '#721c24';
+                statusEl.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        function handleBackupFile(input) {
+            const file = input.files[0];
+            if (file) {
+                selectedBackupFile = file;
+                document.getElementById('backup-file-name').textContent = `Selected: ${file.name}`;
+                document.getElementById('restore-btn').style.display = 'block';
+            } else {
+                selectedBackupFile = null;
+                document.getElementById('backup-file-name').textContent = '';
+                document.getElementById('restore-btn').style.display = 'none';
+            }
+        }
+
+        async function restoreBackup() {
+            if (!selectedBackupFile) {
+                alert('Please select a backup file first');
+                return;
+            }
+
+            if (!confirm('Are you sure you want to restore from this backup? This will overwrite your current configuration (except call history).')) {
+                return;
+            }
+
+            const statusEl = document.getElementById('backup-status');
+            try {
+                statusEl.style.display = 'block';
+                statusEl.style.background = '#e7f3ff';
+                statusEl.style.color = '#0056b3';
+                statusEl.textContent = 'Restoring backup...';
+
+                const formData = new FormData();
+                formData.append('file', selectedBackupFile);
+
+                const response = await fetch(`${API_URL}/api/restore`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    statusEl.style.background = '#d4edda';
+                    statusEl.style.color = '#155724';
+
+                    // Build restore summary
+                    const restored = result.restored || {};
+                    const summary = Object.entries(restored)
+                        .filter(([_, count]) => count > 0)
+                        .map(([table, count]) => `${table}: ${count}`)
+                        .join(', ');
+
+                    statusEl.innerHTML = `<strong>Backup restored successfully!</strong><br>
+                        Backup date: ${result.backup_date}<br>
+                        Restored: ${summary || 'No data'}`;
+
+                    // Refresh current view
+                    loadSettings();
+                    loadGroups();
+
+                    // Clear file selection
+                    selectedBackupFile = null;
+                    document.getElementById('backup-file-input').value = '';
+                    document.getElementById('backup-file-name').textContent = '';
+                    document.getElementById('restore-btn').style.display = 'none';
+
+                } else {
+                    throw new Error(result.detail || 'Restore failed');
+                }
+
+            } catch (error) {
+                statusEl.style.display = 'block';
+                statusEl.style.background = '#f8d7da';
+                statusEl.style.color = '#721c24';
+                statusEl.textContent = `Error: ${error.message}`;
+            }
         }
 
         setInterval(() => {

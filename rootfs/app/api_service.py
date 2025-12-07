@@ -3287,6 +3287,144 @@ async def reload_sip():
 
 
 # ============================================================================
+# BACKUP AND RESTORE
+# ============================================================================
+
+@app.get("/api/backup")
+async def create_backup():
+    """Export entire system configuration as a downloadable JSON backup"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        backup_data = {
+            "version": "1.0",
+            "created_at": datetime.now().isoformat(),
+            "tables": {}
+        }
+
+        # List of tables to backup
+        tables_to_backup = [
+            "call_history",
+            "broadcasts",
+            "contact_groups",
+            "group_members",
+            "scheduled_calls",
+            "dids",
+            "settings",
+            "broadcast_callbacks"
+        ]
+
+        for table in tables_to_backup:
+            try:
+                cursor.execute(f"SELECT * FROM {table}")
+                rows = cursor.fetchall()
+                backup_data["tables"][table] = [dict(row) for row in rows]
+                logger.info(f"📦 Backed up {len(rows)} rows from {table}")
+            except sqlite3.OperationalError as e:
+                logger.warning(f"Table {table} not found or error: {e}")
+                backup_data["tables"][table] = []
+
+        conn.close()
+
+        # Convert to JSON
+        backup_json = json.dumps(backup_data, indent=2, default=str)
+
+        # Create filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"phone_system_backup_{timestamp}.json"
+
+        logger.info(f"✅ Backup created: {filename}")
+
+        return Response(
+            content=backup_json,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error creating backup: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/restore")
+async def restore_backup(file: UploadFile = File(...)):
+    """Restore system configuration from a backup file"""
+    try:
+        # Read and parse the backup file
+        content = await file.read()
+        try:
+            backup_data = json.loads(content.decode('utf-8'))
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid backup file format")
+
+        # Validate backup structure
+        if "version" not in backup_data or "tables" not in backup_data:
+            raise HTTPException(status_code=400, detail="Invalid backup file structure")
+
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        restored_counts = {}
+
+        # Restore each table
+        for table_name, rows in backup_data["tables"].items():
+            if not rows:
+                restored_counts[table_name] = 0
+                continue
+
+            try:
+                # Get column names from the first row
+                columns = list(rows[0].keys())
+
+                # Clear existing data (except for some tables we want to merge)
+                if table_name not in ["call_history"]:  # Don't clear call history
+                    cursor.execute(f"DELETE FROM {table_name}")
+
+                # Insert rows
+                placeholders = ",".join(["?" for _ in columns])
+                column_names = ",".join(columns)
+
+                for row in rows:
+                    values = [row.get(col) for col in columns]
+                    try:
+                        cursor.execute(
+                            f"INSERT OR REPLACE INTO {table_name} ({column_names}) VALUES ({placeholders})",
+                            values
+                        )
+                    except sqlite3.Error as e:
+                        logger.warning(f"Error inserting row into {table_name}: {e}")
+
+                restored_counts[table_name] = len(rows)
+                logger.info(f"📥 Restored {len(rows)} rows to {table_name}")
+
+            except sqlite3.OperationalError as e:
+                logger.warning(f"Error restoring table {table_name}: {e}")
+                restored_counts[table_name] = 0
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"✅ Backup restored successfully from {file.filename}")
+
+        return {
+            "status": "success",
+            "message": "Backup restored successfully",
+            "restored": restored_counts,
+            "backup_date": backup_data.get("created_at", "Unknown")
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error restoring backup: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
 # START SERVER
 # ============================================================================
 
