@@ -14,6 +14,15 @@ SIP_PASS=$(bashio::config 'sip_trunk.password')
 SIP_DOMAIN=$(bashio::config 'sip_trunk.from_domain')
 SIP_CALLER=$(bashio::config 'sip_trunk.caller_number')
 
+# Try to detect external IP for NAT traversal
+bashio::log.info "Detecting external IP for NAT configuration..."
+EXTERNAL_IP=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || curl -s --max-time 5 https://ifconfig.me 2>/dev/null || echo "")
+if [ -n "$EXTERNAL_IP" ]; then
+    bashio::log.info "External IP detected: ${EXTERNAL_IP}"
+else
+    bashio::log.warning "Could not detect external IP - RTP audio may not work behind NAT"
+fi
+
 # Get recording system configuration
 RECORDING_EXTENSION=$(bashio::config 'recording_extension')
 RECORDING_PASSWORD=$(bashio::config 'recording_password')
@@ -27,7 +36,7 @@ mkdir -p /data/database
 # Generate Asterisk sip.conf
 bashio::log.info "Generating Asterisk configuration..."
 
-cat > /etc/asterisk/sip.conf <<'EOF'
+cat > /etc/asterisk/sip.conf <<EOF
 [general]
 context=default
 allowoverlap=no
@@ -40,6 +49,15 @@ allowguest=no
 alwaysauthreject=yes
 nat=force_rport,comedia
 externrefresh=10
+EOF
+
+# Add externaddr if we detected an external IP
+if [ -n "$EXTERNAL_IP" ]; then
+    echo "externaddr=${EXTERNAL_IP}" >> /etc/asterisk/sip.conf
+    bashio::log.info "Added externaddr=${EXTERNAL_IP} to SIP config"
+fi
+
+cat >> /etc/asterisk/sip.conf <<'EOF'
 
 ; Codecs - Order matters!
 disallow=all
@@ -124,6 +142,28 @@ EOF
 
 bashio::log.info "✓ CDR configured"
 # ===== END CDR CONFIGURATION =====
+
+# ===== RTP CONFIGURATION FOR NAT =====
+bashio::log.info "Configuring RTP for NAT traversal..."
+
+cat > /etc/asterisk/rtp.conf <<EOF
+[general]
+rtpstart=10000
+rtpend=10099
+rtpchecksums=no
+strictrtp=yes
+EOF
+
+# Add external IP to RTP config if detected
+if [ -n "$EXTERNAL_IP" ]; then
+    cat >> /etc/asterisk/rtp.conf <<EOF
+; NAT traversal
+externaddr=${EXTERNAL_IP}
+EOF
+    bashio::log.info "✓ RTP configured with externaddr=${EXTERNAL_IP}"
+else
+    bashio::log.info "✓ RTP configured (no external IP detected)"
+fi
 
 # Add extensions
 bashio::log.info "Configuring extensions..."
