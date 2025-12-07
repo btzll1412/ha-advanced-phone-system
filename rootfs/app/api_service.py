@@ -529,31 +529,56 @@ async def process_cdr_record(row):
         billsec = row[13]
         disposition = row[14]
         uniqueid = row[16]
-        
+        userfield = row[17] if len(row) > 17 else ""
+
         # Skip if uniqueid is empty
         if not uniqueid or uniqueid == '':
             return
-        
+
         # Extract caller_id from clid field
         caller_id = ""
         if "<" in clid and ">" in clid:
             caller_id = clid.split("<")[1].split(">")[0]
-        
+
+        # Parse userfield for enhanced call info (format: TYPE|caller|destination|context_info)
+        # This gives us accurate from/to data that may not be in standard CDR fields
+        userfield_type = ""
+        userfield_caller = ""
+        userfield_dest = ""
+        userfield_context = ""
+        if userfield and "|" in userfield:
+            parts = userfield.split("|")
+            if len(parts) >= 4:
+                userfield_type = parts[0]
+                userfield_caller = parts[1]
+                userfield_dest = parts[2]
+                userfield_context = parts[3]
+                logger.info(f"📋 Parsed userfield: type={userfield_type}, caller={userfield_caller}, dest={userfield_dest}, ctx={userfield_context}")
+
         # Determine call type and direction
         call_type = "unknown"
         direction = "unknown"
         extension = None
-        
+
         # Determine based on context
         if context == "outbound-playback":
             call_type = "outbound"
             direction = "outbound"
             logger.info(f"🔍 Processing outbound-playback: channel={channel}")
-            # Extract actual destination from channel: SIP/trunk_main/18455021412
-            if "trunk_main/" in channel:
+
+            # First try userfield for accurate data
+            if userfield_type == "OUTBOUND":
+                if userfield_caller:
+                    caller_id = userfield_caller
+                    source = "System"
+                if userfield_dest:
+                    dest = userfield_dest
+                extension = userfield_context  # e.g., "broadcast"
+                logger.info(f"📤 Outbound call (from userfield): {caller_id} → {dest}")
+            # Fallback: Extract actual destination from channel: SIP/trunk_main/18455021412
+            elif "trunk_main/" in channel:
                 logger.info(f"✅ Found trunk_main in channel!")
                 try:
-            # rest of code...
                     # Get the phone number after trunk_main/
                     actual_dest = channel.split("trunk_main/")[1].split("-")[0]
                     dest = actual_dest  # The number we called (18455021412)
@@ -585,6 +610,16 @@ async def process_cdr_record(row):
         elif context == "inbound":
             call_type = "inbound"
             direction = "inbound"
+            # Use userfield data for accurate caller/DID info
+            if userfield_type == "INBOUND":
+                # For inbound: source=caller, dest=DID that was called
+                if userfield_caller:
+                    source = userfield_caller
+                    caller_id = userfield_caller
+                if userfield_dest:
+                    dest = userfield_dest  # The DID that was called
+                extension = userfield_context  # e.g., "callback"
+                logger.info(f"📞 Inbound call: {source} → DID:{dest} (context: {extension})")
         elif context == "broadcast":
             call_type = "broadcast"
             direction = "outbound"
@@ -831,6 +866,9 @@ async def startup_event():
     migrate_database_v4()
     logger.info("✓ Database migrated v4")
 
+    migrate_database_v5()
+    logger.info("✓ Database migrated v5")
+
     asyncio.create_task(monitor_cdr())
     logger.info("✓ CDR monitoring task started")
 
@@ -898,6 +936,37 @@ def migrate_database_v4():
         cursor.execute('ALTER TABLE broadcasts ADD COLUMN audio_file TEXT')
         conn.commit()
         logger.info("✓ Database migration v4 completed")
+
+    conn.close()
+
+
+def migrate_database_v5():
+    """Ensure broadcast_callbacks table exists for existing databases"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # Check if broadcast_callbacks table exists
+    cursor.execute('''
+        SELECT name FROM sqlite_master
+        WHERE type='table' AND name='broadcast_callbacks'
+    ''')
+
+    if cursor.fetchone() is None:
+        logger.info("Migrating database: creating broadcast_callbacks table")
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS broadcast_callbacks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                caller_id TEXT NOT NULL,
+                audio_file TEXT NOT NULL,
+                broadcast_id TEXT NOT NULL,
+                broadcast_name TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP,
+                enabled INTEGER DEFAULT 1
+            )
+        ''')
+        conn.commit()
+        logger.info("✓ Database migration v5 completed - broadcast_callbacks table created")
 
     conn.close()
 
@@ -1154,6 +1223,24 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+def get_default_did() -> Optional[str]:
+    """Get the default DID (caller ID) from the database.
+
+    Returns the phone number of the default DID, or None if not set.
+    """
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT phone_number FROM dids WHERE is_default = 1 LIMIT 1')
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return row['phone_number']
+        return None
+    except Exception as e:
+        logger.error(f"Error getting default DID: {e}")
+        return None
+
 async def generate_tts(text: str) -> Optional[str]:
     """Generate TTS audio file using Google TTS"""
     try:
@@ -1321,13 +1408,23 @@ async def process_broadcast(broadcast_id: str, request: BroadcastRequest):
     conn = get_db()
     cursor = conn.cursor()
     
-    # Get phone numbers
+    # Get phone numbers and group's caller ID if applicable
     phone_numbers = request.phone_numbers or []
-    
+    group_caller_id = None
+
     if request.group_name:
-        # Load from group
+        # Load group's caller_id first
         cursor.execute('''
-            SELECT gm.phone_number 
+            SELECT caller_id FROM contact_groups WHERE name = ?
+        ''', (request.group_name,))
+        group_row = cursor.fetchone()
+        if group_row and group_row[0]:
+            group_caller_id = group_row[0]
+            logger.info(f"📞 Using group '{request.group_name}' caller ID: {group_caller_id}")
+
+        # Load phone numbers from group
+        cursor.execute('''
+            SELECT gm.phone_number
             FROM group_members gm
             JOIN contact_groups cg ON gm.group_id = cg.id
             WHERE cg.name = ?
@@ -1357,26 +1454,34 @@ async def process_broadcast(broadcast_id: str, request: BroadcastRequest):
         conn.commit()
         conn.close()
         return
-    
+
+    # Determine effective caller ID with priority:
+    # 1. Group's caller_id (if group specified and has one)
+    # 2. Request's caller_id
+    # 3. Default DID from settings
+    effective_caller_id = group_caller_id or request.caller_id or get_default_did()
+    if effective_caller_id:
+        logger.info(f"📞 Effective caller ID for broadcast: {effective_caller_id}")
+
     # Update status and store caller_id/audio_file for callback feature
     cursor.execute('''
         UPDATE broadcasts
         SET status = ?, caller_id = ?, audio_file = ?
         WHERE broadcast_id = ?
-    ''', ('processing', request.caller_id, audio_file, broadcast_id))
+    ''', ('processing', effective_caller_id, audio_file, broadcast_id))
     conn.commit()
 
     # Create callback entry if caller_id is provided (for call-back playback feature)
-    if request.caller_id:
+    if effective_caller_id:
         # Set expiration to 7 days from now
         expires_at = (datetime.now() + timedelta(days=7)).isoformat()
         cursor.execute('''
             INSERT INTO broadcast_callbacks
             (caller_id, audio_file, broadcast_id, broadcast_name, expires_at, enabled)
             VALUES (?, ?, ?, ?, ?, 1)
-        ''', (request.caller_id, audio_file, broadcast_id, request.name, expires_at))
+        ''', (effective_caller_id, audio_file, broadcast_id, request.name, expires_at))
         conn.commit()
-        logger.info(f"📞 Callback enabled for caller ID {request.caller_id} -> {audio_file}")
+        logger.info(f"📞 Callback enabled for caller ID {effective_caller_id} -> {audio_file}")
     
     # Process calls with concurrency control
     semaphore = asyncio.Semaphore(request.concurrent_calls)
@@ -1385,19 +1490,19 @@ async def process_broadcast(broadcast_id: str, request: BroadcastRequest):
         async with semaphore:
             try:
                 call_id = create_call_file(
-                    phone_number, 
-                    audio_file, 
-                    request.caller_id,
+                    phone_number,
+                    audio_file,
+                    effective_caller_id,
                     call_id=f"{broadcast_id}_{uuid.uuid4().hex[:8]}",
                     pre_message_delay=request.pre_message_delay,
                     max_ring_time=request.max_ring_time
                 )
-                
+
                 save_call_to_db(
-                    call_id, 
-                    phone_number, 
-                    audio_file, 
-                    request.caller_id,
+                    call_id,
+                    phone_number,
+                    audio_file,
+                    effective_caller_id,
                     request.group_name,
                     broadcast_id
                 )
@@ -1496,25 +1601,33 @@ async def make_call(request: Request):
         
         
         # ✅ FLEXIBLE CALLER ID LOGIC
-        # Priority: 1. Custom from request, 2. Environment, 3. Config file, 4. Fallback
+        # Priority: 1. Custom from request, 2. Default DID from DB, 3. Environment, 4. Config file
         if custom_caller_id:
             # Use caller ID from API request
             caller_number = custom_caller_id
             logger.info(f"🆔 Using CUSTOM Caller ID from request: {caller_number}")
         else:
-            # Use default from config
-            caller_number = os.getenv('CALLER_NUMBER', '')
-            
-            # If not in env, try to get from add-on config
-            if not caller_number:
-                try:
-                    with open('/data/options.json', 'r') as f:
-                        options = json.load(f)
-                        caller_number = options.get('sip_trunk', {}).get('caller_number', '')
-                except (FileNotFoundError, json.JSONDecodeError, KeyError):
-                    pass
-            
-            logger.info(f"🆔 Using DEFAULT Caller ID from config: {caller_number}")
+            # Try to get default DID from database (system settings)
+            caller_number = get_default_did()
+            if caller_number:
+                logger.info(f"🆔 Using DEFAULT DID from settings: {caller_number}")
+            else:
+                # Fallback to environment variable
+                caller_number = os.getenv('CALLER_NUMBER', '')
+
+                # If not in env, try to get from add-on config
+                if not caller_number:
+                    try:
+                        with open('/data/options.json', 'r') as f:
+                            options = json.load(f)
+                            caller_number = options.get('sip_trunk', {}).get('caller_number', '')
+                    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+                        pass
+
+                if caller_number:
+                    logger.info(f"🆔 Using Caller ID from addon config: {caller_number}")
+                else:
+                    logger.warning(f"⚠️ No default DID or caller ID configured")
         
         # Ensure E.164 format
         if caller_number and not caller_number.startswith('+'):
@@ -2176,31 +2289,107 @@ async def list_recordings():
         logger.error(f"Error listing recordings: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# ADD THE NEW ENDPOINT HERE (right after the recordings endpoint)
+# Call Records API with clear from/to formatting
 @app.get("/api/call_records")
-async def get_call_records(limit: int = 50, call_type: str = None):
-    """Get call records with optional filtering"""
+async def get_call_records(limit: int = 50, call_type: str = None, direction: str = None):
+    """Get call records with optional filtering and clear from/to display"""
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        
-        query = "SELECT * FROM call_records"
+
+        query = """
+            SELECT id, uniqueid, caller_id, source_number, destination_number,
+                   context, channel, extension, call_type, direction,
+                   start_time, answer_time, end_time, duration, billsec,
+                   disposition, broadcast_id, created_at
+            FROM call_records
+        """
+        conditions = []
         params = []
-        
+
         if call_type:
-            query += " WHERE call_type = ?"
+            conditions.append("call_type = ?")
             params.append(call_type)
-        
+
+        if direction:
+            conditions.append("direction = ?")
+            params.append(direction)
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
         query += " ORDER BY start_time DESC LIMIT ?"
         params.append(limit)
-        
+
         c.execute(query, params)
-        columns = [description[0] for description in c.description]
-        results = [dict(zip(columns, row)) for row in c.fetchall()]
-        
+        rows = c.fetchall()
         conn.close()
-        return results
-        
+
+        results = []
+        for row in rows:
+            (id_, uniqueid, caller_id, source_number, destination_number,
+             context, channel, extension, call_type_, direction_,
+             start_time, answer_time, end_time, duration, billsec,
+             disposition, broadcast_id, created_at) = row
+
+            # Format the from/to display based on call direction
+            if direction_ == "inbound":
+                # Inbound: caller → DID (system)
+                from_display = source_number or caller_id or "Unknown"
+                to_display = destination_number or "System"
+                summary = f"📞 {from_display} → {to_display}"
+                if extension:
+                    summary += f" ({extension})"
+            elif direction_ == "outbound":
+                # Outbound: system (caller_id) → destination
+                from_display = caller_id or "System"
+                to_display = destination_number or "Unknown"
+                summary = f"📤 {from_display} → {to_display}"
+            elif direction_ == "internal":
+                # Internal: extension → extension
+                from_display = source_number or "Internal"
+                to_display = destination_number or extension or "Unknown"
+                summary = f"🔄 {from_display} → {to_display}"
+            else:
+                from_display = source_number or caller_id or "Unknown"
+                to_display = destination_number or "Unknown"
+                summary = f"{from_display} → {to_display}"
+
+            # Add disposition indicator
+            if disposition == "ANSWERED":
+                status_icon = "✅"
+            elif disposition == "NO ANSWER":
+                status_icon = "📵"
+            elif disposition == "BUSY":
+                status_icon = "🔴"
+            elif disposition == "FAILED":
+                status_icon = "❌"
+            else:
+                status_icon = "❓"
+
+            results.append({
+                "id": id_,
+                "uniqueid": uniqueid,
+                "summary": f"{status_icon} {summary}",
+                "from": from_display,
+                "to": to_display,
+                "caller_id": caller_id,
+                "direction": direction_,
+                "call_type": call_type_,
+                "context": context,
+                "extension": extension,
+                "start_time": start_time,
+                "answer_time": answer_time,
+                "end_time": end_time,
+                "duration": duration,
+                "talk_time": billsec,
+                "disposition": disposition,
+                "status_icon": status_icon,
+                "broadcast_id": broadcast_id
+            })
+
+        return {"calls": results, "total": len(results)}
+
     except Exception as e:
         logger.error(f"Error fetching call records: {e}")
         raise HTTPException(status_code=500, detail=str(e))
