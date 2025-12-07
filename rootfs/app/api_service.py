@@ -831,6 +831,9 @@ async def startup_event():
     migrate_database_v4()
     logger.info("✓ Database migrated v4")
 
+    migrate_database_v5()
+    logger.info("✓ Database migrated v5")
+
     asyncio.create_task(monitor_cdr())
     logger.info("✓ CDR monitoring task started")
 
@@ -898,6 +901,37 @@ def migrate_database_v4():
         cursor.execute('ALTER TABLE broadcasts ADD COLUMN audio_file TEXT')
         conn.commit()
         logger.info("✓ Database migration v4 completed")
+
+    conn.close()
+
+
+def migrate_database_v5():
+    """Ensure broadcast_callbacks table exists for existing databases"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # Check if broadcast_callbacks table exists
+    cursor.execute('''
+        SELECT name FROM sqlite_master
+        WHERE type='table' AND name='broadcast_callbacks'
+    ''')
+
+    if cursor.fetchone() is None:
+        logger.info("Migrating database: creating broadcast_callbacks table")
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS broadcast_callbacks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                caller_id TEXT NOT NULL,
+                audio_file TEXT NOT NULL,
+                broadcast_id TEXT NOT NULL,
+                broadcast_name TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP,
+                enabled INTEGER DEFAULT 1
+            )
+        ''')
+        conn.commit()
+        logger.info("✓ Database migration v5 completed - broadcast_callbacks table created")
 
     conn.close()
 
