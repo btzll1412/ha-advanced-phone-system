@@ -61,7 +61,26 @@ def get_db_connection():
         db_path = '/config/phone_system.db'
     if not os.path.exists(db_path):
         db_path = '/tmp/phone_system.db'
-    return sqlite3.connect(db_path)
+
+    conn = sqlite3.connect(db_path)
+
+    # Ensure the broadcast_callbacks table exists
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS broadcast_callbacks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            caller_id TEXT NOT NULL,
+            audio_file TEXT NOT NULL,
+            broadcast_id TEXT NOT NULL,
+            broadcast_name TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP,
+            enabled INTEGER DEFAULT 1
+        )
+    ''')
+    conn.commit()
+
+    return conn
 
 def lookup_callbacks(called_number):
     """
