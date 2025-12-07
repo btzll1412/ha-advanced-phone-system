@@ -90,7 +90,7 @@ def generate_prompt(name, text):
 
     # Skip if already exists (unless FORCE_REGENERATE env var is set)
     force_regen = os.environ.get('FORCE_REGENERATE_PROMPTS', '').lower() in ('1', 'true', 'yes')
-    if not force_regen and (os.path.exists(wav_path) or os.path.exists(sln_path)):
+    if not force_regen and os.path.exists(sln_path):
         print(f"Prompt already exists: {name}")
         return True
 
@@ -115,8 +115,25 @@ def generate_prompt(name, text):
                 wav_path
             ], check=True, capture_output=True)
 
-        # Clean up MP3
-        os.remove(mp3_path)
+        # Convert WAV to SLN (signed linear) format for Asterisk
+        # SLN is raw audio without headers - what Asterisk prefers
+        try:
+            subprocess.run([
+                'sox', wav_path, '-t', 'raw', '-r', '8000', '-c', '1', '-b', '16', '-e', 'signed-integer', sln_path
+            ], check=True, capture_output=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # Fallback: ffmpeg to raw PCM
+            subprocess.run([
+                'ffmpeg', '-y', '-i', wav_path,
+                '-f', 's16le', '-ar', '8000', '-ac', '1',
+                sln_path
+            ], check=True, capture_output=True)
+
+        # Clean up MP3 and WAV (keep only SLN)
+        if os.path.exists(mp3_path):
+            os.remove(mp3_path)
+        if os.path.exists(wav_path):
+            os.remove(wav_path)
 
         print(f"Generated prompt: {name}")
         return True
@@ -124,7 +141,7 @@ def generate_prompt(name, text):
     except Exception as e:
         print(f"Error generating prompt {name}: {e}")
         # Clean up partial files
-        for path in [mp3_path, wav_path]:
+        for path in [mp3_path, wav_path, sln_path]:
             if os.path.exists(path):
                 os.remove(path)
         return False
