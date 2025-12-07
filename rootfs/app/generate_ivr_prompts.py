@@ -90,7 +90,7 @@ def generate_prompt(name, text):
 
     # Skip if already exists (unless FORCE_REGENERATE env var is set)
     force_regen = os.environ.get('FORCE_REGENERATE_PROMPTS', '').lower() in ('1', 'true', 'yes')
-    if not force_regen and os.path.exists(ulaw_path):
+    if not force_regen and os.path.exists(wav_path) and os.path.exists(ulaw_path):
         print(f"Prompt already exists: {name}")
         return True
 
@@ -99,7 +99,7 @@ def generate_prompt(name, text):
         tts = gTTS(text=text, lang='en', slow=False)
         tts.save(mp3_path)
 
-        # Convert to WAV format (8kHz, mono, 16-bit)
+        # Convert to WAV format (8kHz, mono, 16-bit) - this is slin format for Asterisk
         # Speed up by 25% using tempo for faster, clearer prompts
         try:
             subprocess.run([
@@ -114,7 +114,7 @@ def generate_prompt(name, text):
                 wav_path
             ], check=True, capture_output=True)
 
-        # Convert WAV to ulaw format for maximum SIP trunk compatibility
+        # Convert WAV to ulaw format for SIP trunk compatibility
         # ulaw (G.711 mu-law) is the standard codec for North American telephony
         try:
             subprocess.run([
@@ -128,11 +128,9 @@ def generate_prompt(name, text):
                 ulaw_path
             ], check=True, capture_output=True)
 
-        # Clean up MP3 and WAV (keep only ulaw)
+        # Clean up MP3 only (keep both wav/slin and ulaw for codec flexibility)
         if os.path.exists(mp3_path):
             os.remove(mp3_path)
-        if os.path.exists(wav_path):
-            os.remove(wav_path)
 
         print(f"Generated prompt: {name}")
         return True
