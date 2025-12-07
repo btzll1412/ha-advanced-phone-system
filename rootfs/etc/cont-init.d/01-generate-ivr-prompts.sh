@@ -14,7 +14,7 @@ mkdir -p "$CUSTOM_DIR"
 
 # Clear old prompts to regenerate with updated tempo (faster speech)
 # Only clear IVR system prompts, not user recordings
-rm -f "$IVR_DIR"/*.wav "$IVR_DIR"/*.sln "$IVR_DIR"/*.mp3 2>/dev/null || true
+rm -f "$IVR_DIR"/*.wav "$IVR_DIR"/*.sln "$IVR_DIR"/*.mp3 "$IVR_DIR"/*.ulaw 2>/dev/null || true
 bashio::log.info "Cleared old IVR prompts for regeneration"
 
 # Run the prompt generator
