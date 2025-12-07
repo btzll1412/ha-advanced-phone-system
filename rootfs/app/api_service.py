@@ -1457,28 +1457,39 @@ async def make_call(request: Request):
         data = await request.json()
         phone_number = data.get('phone_number', '')
         message = data.get('message') or data.get('tts_text', '')  # Might be empty!
+        recording_file = data.get('recording_file', '')  # Pre-recorded audio file
         custom_caller_id = data.get('caller_id', None)
-        
+
         logger.info(f"📞 Call request: {phone_number}")
-        
-        # ✅ Validate and provide default message
-        if not message or message.strip() == '':
-            message = "This is a test call from your phone system"
-            logger.warning(f"⚠️ No message provided, using default")
-        
-        logger.info(f"📝 Message: {message[:100]}")
-        
+
         # Detect call type
         direction, formatted_number = detect_call_type(phone_number)
-        
-        # Generate TTS
-        audio_file = await generate_tts(message)
-        
+
+        # Determine audio source: recording file OR TTS
+        if recording_file:
+            # Use existing recording file
+            # Extract just the filename without path and extension for Asterisk
+            # e.g. "/var/lib/asterisk/sounds/custom/outbound-123.wav" -> "outbound-123"
+            # or "outbound-123.wav" -> "outbound-123"
+            import os.path
+            base_name = os.path.basename(recording_file)
+            # Remove extension
+            audio_file = os.path.splitext(base_name)[0]
+            logger.info(f"🎙️ Using recording file: {recording_file} -> {audio_file}")
+        else:
+            # Generate TTS from message
+            if not message or message.strip() == '':
+                message = "This is a test call from your phone system"
+                logger.warning(f"⚠️ No message provided, using default")
+
+            logger.info(f"📝 Message: {message[:100]}")
+            audio_file = await generate_tts(message)
+
         # ✅ Validate audio file
         if not audio_file:
-            logger.error("❌ TTS returned None, using beep")
+            logger.error("❌ No audio file, using beep")
             audio_file = "beep"
-        
+
         logger.info(f"🔊 Using audio file: {audio_file}")
         
         call_id = str(uuid.uuid4())
