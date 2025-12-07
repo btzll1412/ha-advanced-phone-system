@@ -51,10 +51,17 @@ nat=force_rport,comedia
 externrefresh=10
 EOF
 
-# Add externaddr if we detected an external IP
+# Add externaddr and localnet if we detected an external IP
 if [ -n "$EXTERNAL_IP" ]; then
-    echo "externaddr=${EXTERNAL_IP}" >> /etc/asterisk/sip.conf
-    bashio::log.info "Added externaddr=${EXTERNAL_IP} to SIP config"
+    cat >> /etc/asterisk/sip.conf <<EOF
+externaddr=${EXTERNAL_IP}
+; Define local networks - Asterisk uses externaddr for anything outside these
+localnet=192.168.0.0/255.255.0.0
+localnet=10.0.0.0/255.0.0.0
+localnet=172.16.0.0/255.240.0.0
+localnet=127.0.0.0/255.0.0.0
+EOF
+    bashio::log.info "Added externaddr=${EXTERNAL_IP} with localnet to SIP config"
 fi
 
 cat >> /etc/asterisk/sip.conf <<'EOF'
