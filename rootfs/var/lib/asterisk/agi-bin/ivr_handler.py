@@ -99,20 +99,30 @@ def parse_phone_numbers(phone_input):
             return [phone_str] if phone_str else []
 
 def get_groups():
-    """Get all groups from database"""
+    """Get all groups from database with their phone numbers and caller IDs"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT id, name, phone_numbers FROM groups ORDER BY id')
+        # Get groups from contact_groups table with aggregated phone numbers
+        cursor.execute('''
+            SELECT cg.id, cg.name, cg.caller_id,
+                   GROUP_CONCAT(gm.phone_number) as phone_numbers
+            FROM contact_groups cg
+            LEFT JOIN group_members gm ON cg.id = gm.group_id
+            GROUP BY cg.id
+            ORDER BY cg.id
+        ''')
         groups = cursor.fetchall()
         conn.close()
-        return groups
+        return groups  # Returns: (id, name, caller_id, phone_numbers)
     except Exception as e:
         agi_verbose(f"Error getting groups: {e}")
         return []
 
 def get_group_by_index(index):
-    """Get a specific group by its index (1-based)"""
+    """Get a specific group by its index (1-based)
+    Returns: (id, name, caller_id, phone_numbers) or None
+    """
     try:
         groups = get_groups()
         if 0 < index <= len(groups):
@@ -221,10 +231,11 @@ def main():
         agi_set_variable("GROUP_COUNT", str(len(groups)))
 
         for i, group in enumerate(groups, 1):
-            group_id, name, phone_numbers = group
+            group_id, name, caller_id, phone_numbers = group
             agi_set_variable(f"GROUP_{i}_ID", str(group_id))
             agi_set_variable(f"GROUP_{i}_NAME", name)
-            agi_set_variable(f"GROUP_{i}_PHONES", phone_numbers)
+            agi_set_variable(f"GROUP_{i}_CID", caller_id or "")
+            agi_set_variable(f"GROUP_{i}_PHONES", phone_numbers or "")
 
         agi_verbose(f"Found {len(groups)} groups")
 
@@ -238,12 +249,13 @@ def main():
         group = get_group_by_index(index)
 
         if group:
-            group_id, name, phone_numbers = group
+            group_id, name, caller_id, phone_numbers = group
             agi_set_variable("SELECTED_GROUP_ID", str(group_id))
             agi_set_variable("SELECTED_GROUP_NAME", name)
-            agi_set_variable("SELECTED_GROUP_PHONES", phone_numbers)
+            agi_set_variable("SELECTED_GROUP_CID", caller_id or "")
+            agi_set_variable("SELECTED_GROUP_PHONES", phone_numbers or "")
             agi_set_variable("GROUP_FOUND", "1")
-            agi_verbose(f"Found group: {name}")
+            agi_verbose(f"Found group: {name}, CID: {caller_id or 'default'}")
         else:
             agi_set_variable("GROUP_FOUND", "0")
             agi_verbose(f"Group not found at index {index}")

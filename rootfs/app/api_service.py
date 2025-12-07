@@ -1373,13 +1373,23 @@ async def process_broadcast(broadcast_id: str, request: BroadcastRequest):
     conn = get_db()
     cursor = conn.cursor()
     
-    # Get phone numbers
+    # Get phone numbers and group's caller ID if applicable
     phone_numbers = request.phone_numbers or []
-    
+    group_caller_id = None
+
     if request.group_name:
-        # Load from group
+        # Load group's caller_id first
         cursor.execute('''
-            SELECT gm.phone_number 
+            SELECT caller_id FROM contact_groups WHERE name = ?
+        ''', (request.group_name,))
+        group_row = cursor.fetchone()
+        if group_row and group_row[0]:
+            group_caller_id = group_row[0]
+            logger.info(f"📞 Using group '{request.group_name}' caller ID: {group_caller_id}")
+
+        # Load phone numbers from group
+        cursor.execute('''
+            SELECT gm.phone_number
             FROM group_members gm
             JOIN contact_groups cg ON gm.group_id = cg.id
             WHERE cg.name = ?
@@ -1409,26 +1419,34 @@ async def process_broadcast(broadcast_id: str, request: BroadcastRequest):
         conn.commit()
         conn.close()
         return
-    
+
+    # Determine effective caller ID with priority:
+    # 1. Group's caller_id (if group specified and has one)
+    # 2. Request's caller_id
+    # 3. Default DID from settings
+    effective_caller_id = group_caller_id or request.caller_id or get_default_did()
+    if effective_caller_id:
+        logger.info(f"📞 Effective caller ID for broadcast: {effective_caller_id}")
+
     # Update status and store caller_id/audio_file for callback feature
     cursor.execute('''
         UPDATE broadcasts
         SET status = ?, caller_id = ?, audio_file = ?
         WHERE broadcast_id = ?
-    ''', ('processing', request.caller_id, audio_file, broadcast_id))
+    ''', ('processing', effective_caller_id, audio_file, broadcast_id))
     conn.commit()
 
     # Create callback entry if caller_id is provided (for call-back playback feature)
-    if request.caller_id:
+    if effective_caller_id:
         # Set expiration to 7 days from now
         expires_at = (datetime.now() + timedelta(days=7)).isoformat()
         cursor.execute('''
             INSERT INTO broadcast_callbacks
             (caller_id, audio_file, broadcast_id, broadcast_name, expires_at, enabled)
             VALUES (?, ?, ?, ?, ?, 1)
-        ''', (request.caller_id, audio_file, broadcast_id, request.name, expires_at))
+        ''', (effective_caller_id, audio_file, broadcast_id, request.name, expires_at))
         conn.commit()
-        logger.info(f"📞 Callback enabled for caller ID {request.caller_id} -> {audio_file}")
+        logger.info(f"📞 Callback enabled for caller ID {effective_caller_id} -> {audio_file}")
     
     # Process calls with concurrency control
     semaphore = asyncio.Semaphore(request.concurrent_calls)
@@ -1437,19 +1455,19 @@ async def process_broadcast(broadcast_id: str, request: BroadcastRequest):
         async with semaphore:
             try:
                 call_id = create_call_file(
-                    phone_number, 
-                    audio_file, 
-                    request.caller_id,
+                    phone_number,
+                    audio_file,
+                    effective_caller_id,
                     call_id=f"{broadcast_id}_{uuid.uuid4().hex[:8]}",
                     pre_message_delay=request.pre_message_delay,
                     max_ring_time=request.max_ring_time
                 )
-                
+
                 save_call_to_db(
-                    call_id, 
-                    phone_number, 
-                    audio_file, 
-                    request.caller_id,
+                    call_id,
+                    phone_number,
+                    audio_file,
+                    effective_caller_id,
                     request.group_name,
                     broadcast_id
                 )
