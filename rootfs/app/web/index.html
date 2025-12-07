@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced Phone System</title>
+    <title>📞 Advanced Phone System</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📞</text></svg>">
     <style>
         * {
             margin: 0;
@@ -412,7 +413,7 @@
     <div class="container">
         <div class="header" style="display: flex; justify-content: space-between; align-items: center;">
             <div>
-                <h1>Advanced Phone System</h1>
+                <h1>📞 Advanced Phone System</h1>
                 <p>Manage calls, broadcasts, recordings, and contact groups</p>
             </div>
             <div id="auth-controls" style="display: none;">
@@ -452,18 +453,6 @@
                     <div class="stat-number" id="total-recordings">0</div>
                     <div class="stat-label">Recordings</div>
                 </div>
-            </div>
-
-            <!-- SIP Trunk Status -->
-            <div id="sip-status-container" style="margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 10px; display: flex; align-items: center; gap: 15px;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <span id="sip-status-indicator" style="width: 12px; height: 12px; border-radius: 50%; background: #ccc;"></span>
-                    <span style="font-weight: bold;">SIP Trunk:</span>
-                    <span id="sip-status-text">Checking...</span>
-                </div>
-                <button onclick="reloadSip()" style="margin-left: auto; padding: 6px 12px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 12px;">
-                    Reload SIP
-                </button>
             </div>
 
             <h3 style="margin-top: 30px; margin-bottom: 15px; color: #333;">Recent Activity</h3>
@@ -1011,6 +1000,46 @@
                         </tbody>
                     </table>
                 </div>
+            </div>
+
+            <!-- Backup & Restore Section -->
+            <div style="background: #f8f9fa; padding: 25px; border-radius: 10px; border-left: 4px solid #6c757d; margin-bottom: 20px;">
+                <h3 style="margin-bottom: 15px; color: #333;">💾 Backup & Restore</h3>
+                <p style="color: #666; margin-bottom: 15px;">
+                    Export your entire system configuration (groups, DIDs, scheduled calls, broadcasts) to a backup file,
+                    or restore from a previous backup.
+                </p>
+
+                <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                    <!-- Export Section -->
+                    <div style="flex: 1; min-width: 250px; background: white; padding: 20px; border-radius: 8px;">
+                        <h4 style="margin-bottom: 10px; color: #28a745;">📤 Export Backup</h4>
+                        <p style="font-size: 14px; color: #666; margin-bottom: 15px;">
+                            Download a JSON file containing all your system data.
+                        </p>
+                        <button onclick="downloadBackup()" class="btn" style="width: 100%;">
+                            ⬇️ Download Backup
+                        </button>
+                    </div>
+
+                    <!-- Import Section -->
+                    <div style="flex: 1; min-width: 250px; background: white; padding: 20px; border-radius: 8px;">
+                        <h4 style="margin-bottom: 10px; color: #dc3545;">📥 Restore Backup</h4>
+                        <p style="font-size: 14px; color: #666; margin-bottom: 15px;">
+                            Upload a backup file to restore your configuration.
+                        </p>
+                        <input type="file" id="backup-file-input" accept=".json" style="display: none;" onchange="handleBackupFile(this)">
+                        <button onclick="document.getElementById('backup-file-input').click()" class="btn btn-secondary" style="width: 100%;">
+                            📁 Select Backup File
+                        </button>
+                        <div id="backup-file-name" style="margin-top: 10px; font-size: 14px; color: #666;"></div>
+                        <button id="restore-btn" onclick="restoreBackup()" class="btn" style="width: 100%; margin-top: 10px; display: none; background: #dc3545;">
+                            ⚠️ Restore Backup
+                        </button>
+                    </div>
+                </div>
+
+                <div id="backup-status" style="margin-top: 15px; padding: 10px; border-radius: 5px; display: none;"></div>
             </div>
         </div>
     </div>
@@ -1886,66 +1915,9 @@
                 }
                 
                 await loadActiveCalls();
-                await checkSipStatus();
 
             } catch (error) {
                 console.error('Error loading dashboard:', error);
-            }
-        }
-
-        async function checkSipStatus() {
-            try {
-                const response = await fetch(`${API_URL}/api/sip/status`);
-                const data = await response.json();
-
-                const indicator = document.getElementById('sip-status-indicator');
-                const text = document.getElementById('sip-status-text');
-
-                if (data.status === 'connected' && data.registered) {
-                    indicator.style.background = '#28a745';  // Green
-                    text.textContent = 'Connected & Registered';
-                } else if (data.status === 'error') {
-                    indicator.style.background = '#dc3545';  // Red
-                    text.textContent = 'Error: ' + (data.message || 'Unknown');
-                } else {
-                    indicator.style.background = '#ffc107';  // Yellow
-                    text.textContent = 'Not Registered';
-                }
-            } catch (error) {
-                console.error('Error checking SIP status:', error);
-                const indicator = document.getElementById('sip-status-indicator');
-                const text = document.getElementById('sip-status-text');
-                indicator.style.background = '#6c757d';  // Gray
-                text.textContent = 'Unable to check';
-            }
-        }
-
-        async function reloadSip() {
-            const button = event.target;
-            button.disabled = true;
-            button.textContent = 'Reloading...';
-
-            try {
-                const response = await fetch(`${API_URL}/api/sip/reload`, { method: 'POST' });
-                const data = await response.json();
-
-                if (data.status === 'success') {
-                    await checkSipStatus();
-                    button.textContent = 'Reloaded!';
-                    setTimeout(() => {
-                        button.textContent = 'Reload SIP';
-                        button.disabled = false;
-                    }, 2000);
-                } else {
-                    throw new Error(data.message || 'Reload failed');
-                }
-            } catch (error) {
-                console.error('Error reloading SIP:', error);
-                button.textContent = 'Error';
-                setTimeout(() => {
-                    button.textContent = 'Reload SIP';
-                    button.disabled = false;
-                }, 2000);
             }
         }
 
@@ -2228,10 +2200,13 @@
         async function loadCallRecords() {
     try {
         const response = await fetch('/api/call_records?limit=100');
-        const records = await response.json();
-        
+        const data = await response.json();
+
+        // API returns {calls: [...], total: n}
+        const records = data.calls || [];
+
         const tableBody = document.getElementById('call-records-table');
-        
+
         if (!records || records.length === 0) {
             tableBody.innerHTML = `
                 <tr>
@@ -2242,37 +2217,41 @@
             `;
             return;
         }
-        
+
         // Populate extension filter
         const extensions = [...new Set(records.filter(r => r.extension).map(r => r.extension))];
         const extFilter = document.getElementById('filter-extension');
-        extFilter.innerHTML = '<option value="">All Extensions</option>';
-        extensions.forEach(ext => {
-            const option = document.createElement('option');
-            option.value = ext;
-            option.textContent = `Extension ${ext}`;
-            extFilter.appendChild(option);
-        });
-        
+        if (extFilter) {
+            extFilter.innerHTML = '<option value="">All Extensions</option>';
+            extensions.forEach(ext => {
+                const option = document.createElement('option');
+                option.value = ext;
+                option.textContent = `Extension ${ext}`;
+                extFilter.appendChild(option);
+            });
+        }
+
         // Populate caller ID filter
         const callerIds = [...new Set(records.filter(r => r.caller_id).map(r => r.caller_id))];
         const callerIdFilter = document.getElementById('filter-caller-id');
-        callerIdFilter.innerHTML = '<option value="">All Caller IDs</option>';
-        callerIds.forEach(cid => {
-            const option = document.createElement('option');
-            option.value = cid;
-            option.textContent = cid;
-            callerIdFilter.appendChild(option);
-        });
-        
+        if (callerIdFilter) {
+            callerIdFilter.innerHTML = '<option value="">All Caller IDs</option>';
+            callerIds.forEach(cid => {
+                const option = document.createElement('option');
+                option.value = cid;
+                option.textContent = cid;
+                callerIdFilter.appendChild(option);
+            });
+        }
+
         displayCallRecords(records);
-        
+
     } catch (error) {
         console.error('Error loading call records:', error);
         document.getElementById('call-records-table').innerHTML = `
             <tr>
                 <td colspan="9" style="padding: 40px; text-align: center; color: #dc3545;">
-                    Error loading call history
+                    Error loading call history: ${error.message}
                 </td>
             </tr>
         `;
@@ -2280,61 +2259,43 @@
 }
         function displayCallRecords(records) {
     const tableBody = document.getElementById('call-records-table');
-    
+
     tableBody.innerHTML = records.map(record => {
-        const date = new Date(record.created_at);
-        const dateStr = date.toString() !== 'Invalid Date' 
+        // Use start_time from API (not created_at)
+        const date = new Date(record.start_time);
+        const dateStr = date.toString() !== 'Invalid Date'
             ? date.toLocaleString()
-            : record.created_at;
-        
-        const billsec = parseInt(record.billsec) || 0;
+            : record.start_time || 'Unknown';
+
+        const talkTime = parseInt(record.talk_time) || 0;
         const duration = parseInt(record.duration) || 0;
-        
-        // Duration-based detection
-        let status = 'UNKNOWN';
+
+        // Use answer_type and amd_status from API if available
+        let status = record.answer_type || record.disposition || 'UNKNOWN';
         let statusColor = '#718096';
-        let statusEmoji = '❓';
-        
-        if (record.is_voicemail === 0) {
-            status = 'HUMAN ANSWERED';
+        let statusEmoji = record.status_icon || '❓';
+
+        // Set colors based on answer_type or amd_status
+        if (record.amd_status === 'HUMAN' || status === 'Human Answered') {
             statusColor = '#48bb78';
-            statusEmoji = '✅';
-        } else if (record.is_voicemail === 1) {
-            status = 'VOICEMAIL';
+        } else if (record.amd_status === 'MACHINE' || status === 'Voicemail/Machine') {
             statusColor = '#ff6b6b';
-            statusEmoji = '📧';
-        } else if (record.is_voicemail === 2) {
-            status = 'UNCERTAIN';
-            statusColor = '#ffc107';
-            statusEmoji = '❓';
-        } else {
-            // Fallback to billsec logic if is_voicemail not set
-            if (billsec >= 3) {
-                status = 'HUMAN ANSWERED';
-                statusColor = '#48bb78';
-                statusEmoji = '✅';
-            } else if (billsec > 0) {
-                status = 'QUICK HANGUP';
-                statusColor = '#ed8936';
-                statusEmoji = '⚠️';
-            } else if (duration > 0) {
-                status = 'VOICEMAIL';
-                statusColor = '#f56565';
-                statusEmoji = '📧';
-            } else {
-                status = 'NO ANSWER';
-                statusColor = '#f56565';
-                statusEmoji = '❌';
-            }
+        } else if (record.disposition === 'ANSWERED') {
+            statusColor = '#48bb78';
+        } else if (record.disposition === 'NO ANSWER') {
+            statusColor = '#f56565';
+        } else if (record.disposition === 'BUSY') {
+            statusColor = '#ed8936';
+        } else if (record.disposition === 'FAILED') {
+            statusColor = '#dc3545';
         }
-        
+
         const directionIcon = getDirectionIcon(record.direction);
         const typeColor = getCallTypeColor(record.call_type || 'outbound');
-        const recordJson = JSON.stringify(record).replace(/"/g, '&quot;');
-        
+
         return `
-            <tr style="border-bottom: 1px solid #dee2e6; transition: background 0.2s;" 
-                onmouseover="this.style.background='#f8f9fa'" 
+            <tr style="border-bottom: 1px solid #dee2e6; transition: background 0.2s;"
+                onmouseover="this.style.background='#f8f9fa'"
                 onmouseout="this.style.background='white'">
                 <td style="padding: 12px;">
                     <div style="font-weight: 500;">${dateStr}</div>
@@ -2343,11 +2304,11 @@
                     <span style="font-size: 20px;">${directionIcon}</span>
                 </td>
                 <td style="padding: 12px;">
-                    <div style="font-weight: 500;">${record.source_number || 'Unknown'}</div>
-                    ${record.caller_id ? `<div style="font-size: 12px; color: #6c757d;">${record.caller_id}</div>` : ''}
+                    <div style="font-weight: 500;">${record.from || 'Unknown'}</div>
+                    ${record.caller_id && record.caller_id !== record.from ? `<div style="font-size: 12px; color: #6c757d;">${record.caller_id}</div>` : ''}
                 </td>
                 <td style="padding: 12px; font-weight: 500;">
-                    ${record.destination_number || 'Unknown'}
+                    ${record.to || 'Unknown'}
                 </td>
                 <td style="padding: 12px;">
                     ${record.extension ? `<span style="background: #e3f2fd; color: #1976d2; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;">Ext ${record.extension}</span>` : '-'}
@@ -2358,19 +2319,13 @@
                     </span>
                 </td>
                 <td style="padding: 12px;">
-                    <div style="font-weight: 600; font-size: 16px;">${billsec}s</div>
+                    <div style="font-weight: 600; font-size: 16px;">${talkTime}s</div>
                     <div style="font-size: 11px; color: #6c757d;">(${duration}s total)</div>
                 </td>
                 <td style="padding: 12px;">
                     <span style="background: ${statusColor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;">
                         ${statusEmoji} ${status}
                     </span>
-                </td>
-                <td style="padding: 12px;">
-                    <button onclick='showCallDetails(${recordJson})' 
-                            style="background: #667eea; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">
-                        View
-                    </button>
                 </td>
             </tr>
         `;
@@ -3011,6 +2966,132 @@ function exportGroupCSV(groupName) {
                 return document.getElementById(customInputId).value.trim();
             }
             return select.value;
+        }
+
+        // Backup & Restore functions
+        let selectedBackupFile = null;
+
+        async function downloadBackup() {
+            try {
+                const statusEl = document.getElementById('backup-status');
+                statusEl.style.display = 'block';
+                statusEl.style.background = '#e7f3ff';
+                statusEl.style.color = '#0056b3';
+                statusEl.textContent = 'Creating backup...';
+
+                const response = await fetch(`${API_URL}/api/backup`);
+                if (!response.ok) {
+                    throw new Error('Failed to create backup');
+                }
+
+                // Get filename from header or generate one
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let filename = 'phone_system_backup.json';
+                if (contentDisposition) {
+                    const match = contentDisposition.match(/filename=([^;]+)/);
+                    if (match) filename = match[1];
+                }
+
+                // Download the file
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+
+                statusEl.style.background = '#d4edda';
+                statusEl.style.color = '#155724';
+                statusEl.textContent = 'Backup downloaded successfully!';
+                setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+
+            } catch (error) {
+                const statusEl = document.getElementById('backup-status');
+                statusEl.style.display = 'block';
+                statusEl.style.background = '#f8d7da';
+                statusEl.style.color = '#721c24';
+                statusEl.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        function handleBackupFile(input) {
+            const file = input.files[0];
+            if (file) {
+                selectedBackupFile = file;
+                document.getElementById('backup-file-name').textContent = `Selected: ${file.name}`;
+                document.getElementById('restore-btn').style.display = 'block';
+            } else {
+                selectedBackupFile = null;
+                document.getElementById('backup-file-name').textContent = '';
+                document.getElementById('restore-btn').style.display = 'none';
+            }
+        }
+
+        async function restoreBackup() {
+            if (!selectedBackupFile) {
+                alert('Please select a backup file first');
+                return;
+            }
+
+            if (!confirm('Are you sure you want to restore from this backup? This will overwrite your current configuration (except call history).')) {
+                return;
+            }
+
+            const statusEl = document.getElementById('backup-status');
+            try {
+                statusEl.style.display = 'block';
+                statusEl.style.background = '#e7f3ff';
+                statusEl.style.color = '#0056b3';
+                statusEl.textContent = 'Restoring backup...';
+
+                const formData = new FormData();
+                formData.append('file', selectedBackupFile);
+
+                const response = await fetch(`${API_URL}/api/restore`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    statusEl.style.background = '#d4edda';
+                    statusEl.style.color = '#155724';
+
+                    // Build restore summary
+                    const restored = result.restored || {};
+                    const summary = Object.entries(restored)
+                        .filter(([_, count]) => count > 0)
+                        .map(([table, count]) => `${table}: ${count}`)
+                        .join(', ');
+
+                    statusEl.innerHTML = `<strong>Backup restored successfully!</strong><br>
+                        Backup date: ${result.backup_date}<br>
+                        Restored: ${summary || 'No data'}`;
+
+                    // Refresh current view
+                    loadSettings();
+                    loadGroups();
+
+                    // Clear file selection
+                    selectedBackupFile = null;
+                    document.getElementById('backup-file-input').value = '';
+                    document.getElementById('backup-file-name').textContent = '';
+                    document.getElementById('restore-btn').style.display = 'none';
+
+                } else {
+                    throw new Error(result.detail || 'Restore failed');
+                }
+
+            } catch (error) {
+                statusEl.style.display = 'block';
+                statusEl.style.background = '#f8d7da';
+                statusEl.style.color = '#721c24';
+                statusEl.textContent = `Error: ${error.message}`;
+            }
         }
 
         setInterval(() => {

@@ -49,6 +49,7 @@ options:
   log_level: "info"
   recording_extension: "999"
   recording_password: "1234"
+  timezone: "America/New_York"
 schema:
   sip_trunk:
     enabled: bool
@@ -78,6 +79,7 @@ schema:
   log_level: list(debug|info|warning|error)
   recording_extension: str
   recording_password: password
+  timezone: str?
 homeassistant_api: true
 hassio_api: true
 hassio_role: default
