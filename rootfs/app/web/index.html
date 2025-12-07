@@ -454,18 +454,6 @@
                 </div>
             </div>
 
-            <!-- SIP Trunk Status -->
-            <div id="sip-status-container" style="margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 10px; display: flex; align-items: center; gap: 15px;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <span id="sip-status-indicator" style="width: 12px; height: 12px; border-radius: 50%; background: #ccc;"></span>
-                    <span style="font-weight: bold;">SIP Trunk:</span>
-                    <span id="sip-status-text">Checking...</span>
-                </div>
-                <button onclick="reloadSip()" style="margin-left: auto; padding: 6px 12px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 12px;">
-                    Reload SIP
-                </button>
-            </div>
-
             <h3 style="margin-top: 30px; margin-bottom: 15px; color: #333;">Recent Activity</h3>
             <div id="recent-activity"></div>
             <h3 style="margin-top: 30px; margin-bottom: 15px; color: #333;">Active Calls</h3>
@@ -1886,66 +1874,9 @@
                 }
                 
                 await loadActiveCalls();
-                await checkSipStatus();
 
             } catch (error) {
                 console.error('Error loading dashboard:', error);
-            }
-        }
-
-        async function checkSipStatus() {
-            try {
-                const response = await fetch(`${API_URL}/api/sip/status`);
-                const data = await response.json();
-
-                const indicator = document.getElementById('sip-status-indicator');
-                const text = document.getElementById('sip-status-text');
-
-                if (data.status === 'connected' && data.registered) {
-                    indicator.style.background = '#28a745';  // Green
-                    text.textContent = 'Connected & Registered';
-                } else if (data.status === 'error') {
-                    indicator.style.background = '#dc3545';  // Red
-                    text.textContent = 'Error: ' + (data.message || 'Unknown');
-                } else {
-                    indicator.style.background = '#ffc107';  // Yellow
-                    text.textContent = 'Not Registered';
-                }
-            } catch (error) {
-                console.error('Error checking SIP status:', error);
-                const indicator = document.getElementById('sip-status-indicator');
-                const text = document.getElementById('sip-status-text');
-                indicator.style.background = '#6c757d';  // Gray
-                text.textContent = 'Unable to check';
-            }
-        }
-
-        async function reloadSip() {
-            const button = event.target;
-            button.disabled = true;
-            button.textContent = 'Reloading...';
-
-            try {
-                const response = await fetch(`${API_URL}/api/sip/reload`, { method: 'POST' });
-                const data = await response.json();
-
-                if (data.status === 'success') {
-                    await checkSipStatus();
-                    button.textContent = 'Reloaded!';
-                    setTimeout(() => {
-                        button.textContent = 'Reload SIP';
-                        button.disabled = false;
-                    }, 2000);
-                } else {
-                    throw new Error(data.message || 'Reload failed');
-                }
-            } catch (error) {
-                console.error('Error reloading SIP:', error);
-                button.textContent = 'Error';
-                setTimeout(() => {
-                    button.textContent = 'Reload SIP';
-                    button.disabled = false;
-                }, 2000);
             }
         }
 

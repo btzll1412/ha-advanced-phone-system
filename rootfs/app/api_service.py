@@ -546,6 +546,7 @@ async def process_cdr_record(row):
         userfield_caller = ""
         userfield_dest = ""
         userfield_context = ""
+        amd_result = ""  # Answering Machine Detection result: HUMAN, MACHINE, NOTSURE, HANGUP
         if userfield and "|" in userfield:
             parts = userfield.split("|")
             if len(parts) >= 4:
@@ -553,7 +554,9 @@ async def process_cdr_record(row):
                 userfield_caller = parts[1]
                 userfield_dest = parts[2]
                 userfield_context = parts[3]
-                logger.info(f"📋 Parsed userfield: type={userfield_type}, caller={userfield_caller}, dest={userfield_dest}, ctx={userfield_context}")
+                if len(parts) >= 5:
+                    amd_result = parts[4]
+                logger.info(f"📋 Parsed userfield: type={userfield_type}, caller={userfield_caller}, dest={userfield_dest}, ctx={userfield_context}, amd={amd_result}")
 
         # Determine call type and direction
         call_type = "unknown"
@@ -710,20 +713,22 @@ async def process_cdr_record(row):
         c = conn.cursor()
 
         c.execute('''
-            INSERT OR IGNORE INTO call_records 
-            (uniqueid, caller_id, source_number, destination_number, context, 
+            INSERT OR IGNORE INTO call_records
+            (uniqueid, caller_id, source_number, destination_number, context,
              channel, destination_channel, extension, call_type, direction,
              start_time, answer_time, end_time, duration, billsec, disposition,
-             broadcast_id, recording_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             broadcast_id, recording_id, amd_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (uniqueid, caller_id, source, dest, context, channel, dst_channel,
-              extension, call_type, direction, start, answer, end, 
-              duration_int, billsec_int, disposition, None, None))
+              extension, call_type, direction, start, answer, end,
+              duration_int, billsec_int, disposition, None, None, amd_result or None))
 
         conn.commit()
         conn.close()
 
-        logger.info(f"📞 Recorded call: {source} → {dest} ({call_type}) - Duration: {duration_int}s, Talk: {billsec_int}s, Status: {disposition}")
+        # Log AMD result if available
+        amd_info = f", AMD: {amd_result}" if amd_result else ""
+        logger.info(f"📞 Recorded call: {source} → {dest} ({call_type}) - Duration: {duration_int}s, Talk: {billsec_int}s, Status: {disposition}{amd_info}")
 
         # Update call_history status for ALL outbound calls (not just outbound-playback)
         # This catches calls regardless of their context, as long as they went through the trunk
@@ -883,6 +888,9 @@ async def startup_event():
     migrate_database_v5()
     logger.info("✓ Database migrated v5")
 
+    migrate_database_v6()
+    logger.info("✓ Database migrated v6")
+
     asyncio.create_task(monitor_cdr())
     logger.info("✓ CDR monitoring task started")
 
@@ -981,6 +989,24 @@ def migrate_database_v5():
         ''')
         conn.commit()
         logger.info("✓ Database migration v5 completed - broadcast_callbacks table created")
+
+    conn.close()
+
+
+def migrate_database_v6():
+    """Add amd_status column to call_records for Answering Machine Detection results"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # Check if amd_status column exists
+    cursor.execute('PRAGMA table_info(call_records)')
+    columns = [col[1] for col in cursor.fetchall()]
+
+    if 'amd_status' not in columns:
+        logger.info("Migrating database: adding amd_status column to call_records")
+        cursor.execute('ALTER TABLE call_records ADD COLUMN amd_status TEXT')
+        conn.commit()
+        logger.info("✓ Database migration v6 completed - amd_status column added")
 
     conn.close()
 
@@ -2345,7 +2371,7 @@ async def get_call_records(limit: int = 50, call_type: str = None, direction: st
             SELECT id, uniqueid, caller_id, source_number, destination_number,
                    context, channel, extension, call_type, direction,
                    start_time, answer_time, end_time, duration, billsec,
-                   disposition, broadcast_id, created_at
+                   disposition, broadcast_id, created_at, amd_status
             FROM call_records
         """
         conditions = []
@@ -2374,7 +2400,7 @@ async def get_call_records(limit: int = 50, call_type: str = None, direction: st
             (id_, uniqueid, caller_id, source_number, destination_number,
              context, channel, extension, call_type_, direction_,
              start_time, answer_time, end_time, duration, billsec,
-             disposition, broadcast_id, created_at) = row
+             disposition, broadcast_id, created_at, amd_status) = row
 
             # Format the from/to display based on call direction
             if direction_ == "inbound":
@@ -2399,17 +2425,32 @@ async def get_call_records(limit: int = 50, call_type: str = None, direction: st
                 to_display = destination_number or "Unknown"
                 summary = f"{from_display} → {to_display}"
 
-            # Add disposition indicator
+            # Add disposition indicator - enhanced with AMD detection
             if disposition == "ANSWERED":
-                status_icon = "✅"
+                if amd_status == "HUMAN":
+                    status_icon = "👤"
+                    answer_type = "Human Answered"
+                elif amd_status == "MACHINE":
+                    status_icon = "📠"
+                    answer_type = "Voicemail/Machine"
+                elif amd_status == "NOTSURE":
+                    status_icon = "❓"
+                    answer_type = "Uncertain"
+                else:
+                    status_icon = "✅"
+                    answer_type = "Answered"
             elif disposition == "NO ANSWER":
                 status_icon = "📵"
+                answer_type = "No Answer"
             elif disposition == "BUSY":
                 status_icon = "🔴"
+                answer_type = "Busy"
             elif disposition == "FAILED":
                 status_icon = "❌"
+                answer_type = "Failed"
             else:
                 status_icon = "❓"
+                answer_type = disposition or "Unknown"
 
             results.append({
                 "id": id_,
@@ -2429,7 +2470,9 @@ async def get_call_records(limit: int = 50, call_type: str = None, direction: st
                 "talk_time": billsec,
                 "disposition": disposition,
                 "status_icon": status_icon,
-                "broadcast_id": broadcast_id
+                "broadcast_id": broadcast_id,
+                "amd_status": amd_status,
+                "answer_type": answer_type
             })
 
         return {"calls": results, "total": len(results)}

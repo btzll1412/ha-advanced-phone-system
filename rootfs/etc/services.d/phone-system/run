@@ -27,6 +27,18 @@ fi
 RECORDING_EXTENSION=$(bashio::config 'recording_extension')
 RECORDING_PASSWORD=$(bashio::config 'recording_password')
 
+# Set timezone
+TIMEZONE=$(bashio::config 'timezone')
+if [ -n "$TIMEZONE" ] && [ "$TIMEZONE" != "null" ]; then
+    export TZ="$TIMEZONE"
+    bashio::log.info "Timezone set to: ${TIMEZONE}"
+    # Also set for Asterisk
+    echo "$TIMEZONE" > /etc/timezone
+    ln -sf "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime 2>/dev/null || true
+else
+    bashio::log.info "Using default timezone (UTC)"
+fi
+
 # Create directories
 mkdir -p /var/lib/asterisk/sounds/custom
 mkdir -p /var/spool/asterisk/outgoing
