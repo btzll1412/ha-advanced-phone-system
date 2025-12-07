@@ -529,31 +529,56 @@ async def process_cdr_record(row):
         billsec = row[13]
         disposition = row[14]
         uniqueid = row[16]
-        
+        userfield = row[17] if len(row) > 17 else ""
+
         # Skip if uniqueid is empty
         if not uniqueid or uniqueid == '':
             return
-        
+
         # Extract caller_id from clid field
         caller_id = ""
         if "<" in clid and ">" in clid:
             caller_id = clid.split("<")[1].split(">")[0]
-        
+
+        # Parse userfield for enhanced call info (format: TYPE|caller|destination|context_info)
+        # This gives us accurate from/to data that may not be in standard CDR fields
+        userfield_type = ""
+        userfield_caller = ""
+        userfield_dest = ""
+        userfield_context = ""
+        if userfield and "|" in userfield:
+            parts = userfield.split("|")
+            if len(parts) >= 4:
+                userfield_type = parts[0]
+                userfield_caller = parts[1]
+                userfield_dest = parts[2]
+                userfield_context = parts[3]
+                logger.info(f"📋 Parsed userfield: type={userfield_type}, caller={userfield_caller}, dest={userfield_dest}, ctx={userfield_context}")
+
         # Determine call type and direction
         call_type = "unknown"
         direction = "unknown"
         extension = None
-        
+
         # Determine based on context
         if context == "outbound-playback":
             call_type = "outbound"
             direction = "outbound"
             logger.info(f"🔍 Processing outbound-playback: channel={channel}")
-            # Extract actual destination from channel: SIP/trunk_main/18455021412
-            if "trunk_main/" in channel:
+
+            # First try userfield for accurate data
+            if userfield_type == "OUTBOUND":
+                if userfield_caller:
+                    caller_id = userfield_caller
+                    source = "System"
+                if userfield_dest:
+                    dest = userfield_dest
+                extension = userfield_context  # e.g., "broadcast"
+                logger.info(f"📤 Outbound call (from userfield): {caller_id} → {dest}")
+            # Fallback: Extract actual destination from channel: SIP/trunk_main/18455021412
+            elif "trunk_main/" in channel:
                 logger.info(f"✅ Found trunk_main in channel!")
                 try:
-            # rest of code...
                     # Get the phone number after trunk_main/
                     actual_dest = channel.split("trunk_main/")[1].split("-")[0]
                     dest = actual_dest  # The number we called (18455021412)
@@ -585,6 +610,16 @@ async def process_cdr_record(row):
         elif context == "inbound":
             call_type = "inbound"
             direction = "inbound"
+            # Use userfield data for accurate caller/DID info
+            if userfield_type == "INBOUND":
+                # For inbound: source=caller, dest=DID that was called
+                if userfield_caller:
+                    source = userfield_caller
+                    caller_id = userfield_caller
+                if userfield_dest:
+                    dest = userfield_dest  # The DID that was called
+                extension = userfield_context  # e.g., "callback"
+                logger.info(f"📞 Inbound call: {source} → DID:{dest} (context: {extension})")
         elif context == "broadcast":
             call_type = "broadcast"
             direction = "outbound"
@@ -2254,31 +2289,107 @@ async def list_recordings():
         logger.error(f"Error listing recordings: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# ADD THE NEW ENDPOINT HERE (right after the recordings endpoint)
+# Call Records API with clear from/to formatting
 @app.get("/api/call_records")
-async def get_call_records(limit: int = 50, call_type: str = None):
-    """Get call records with optional filtering"""
+async def get_call_records(limit: int = 50, call_type: str = None, direction: str = None):
+    """Get call records with optional filtering and clear from/to display"""
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        
-        query = "SELECT * FROM call_records"
+
+        query = """
+            SELECT id, uniqueid, caller_id, source_number, destination_number,
+                   context, channel, extension, call_type, direction,
+                   start_time, answer_time, end_time, duration, billsec,
+                   disposition, broadcast_id, created_at
+            FROM call_records
+        """
+        conditions = []
         params = []
-        
+
         if call_type:
-            query += " WHERE call_type = ?"
+            conditions.append("call_type = ?")
             params.append(call_type)
-        
+
+        if direction:
+            conditions.append("direction = ?")
+            params.append(direction)
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
         query += " ORDER BY start_time DESC LIMIT ?"
         params.append(limit)
-        
+
         c.execute(query, params)
-        columns = [description[0] for description in c.description]
-        results = [dict(zip(columns, row)) for row in c.fetchall()]
-        
+        rows = c.fetchall()
         conn.close()
-        return results
-        
+
+        results = []
+        for row in rows:
+            (id_, uniqueid, caller_id, source_number, destination_number,
+             context, channel, extension, call_type_, direction_,
+             start_time, answer_time, end_time, duration, billsec,
+             disposition, broadcast_id, created_at) = row
+
+            # Format the from/to display based on call direction
+            if direction_ == "inbound":
+                # Inbound: caller → DID (system)
+                from_display = source_number or caller_id or "Unknown"
+                to_display = destination_number or "System"
+                summary = f"📞 {from_display} → {to_display}"
+                if extension:
+                    summary += f" ({extension})"
+            elif direction_ == "outbound":
+                # Outbound: system (caller_id) → destination
+                from_display = caller_id or "System"
+                to_display = destination_number or "Unknown"
+                summary = f"📤 {from_display} → {to_display}"
+            elif direction_ == "internal":
+                # Internal: extension → extension
+                from_display = source_number or "Internal"
+                to_display = destination_number or extension or "Unknown"
+                summary = f"🔄 {from_display} → {to_display}"
+            else:
+                from_display = source_number or caller_id or "Unknown"
+                to_display = destination_number or "Unknown"
+                summary = f"{from_display} → {to_display}"
+
+            # Add disposition indicator
+            if disposition == "ANSWERED":
+                status_icon = "✅"
+            elif disposition == "NO ANSWER":
+                status_icon = "📵"
+            elif disposition == "BUSY":
+                status_icon = "🔴"
+            elif disposition == "FAILED":
+                status_icon = "❌"
+            else:
+                status_icon = "❓"
+
+            results.append({
+                "id": id_,
+                "uniqueid": uniqueid,
+                "summary": f"{status_icon} {summary}",
+                "from": from_display,
+                "to": to_display,
+                "caller_id": caller_id,
+                "direction": direction_,
+                "call_type": call_type_,
+                "context": context,
+                "extension": extension,
+                "start_time": start_time,
+                "answer_time": answer_time,
+                "end_time": end_time,
+                "duration": duration,
+                "talk_time": billsec,
+                "disposition": disposition,
+                "status_icon": status_icon,
+                "broadcast_id": broadcast_id
+            })
+
+        return {"calls": results, "total": len(results)}
+
     except Exception as e:
         logger.error(f"Error fetching call records: {e}")
         raise HTTPException(status_code=500, detail=str(e))
