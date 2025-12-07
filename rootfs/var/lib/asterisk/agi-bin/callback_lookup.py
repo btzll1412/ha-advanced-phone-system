@@ -122,6 +122,34 @@ def lookup_callbacks(called_number):
         agi_verbose(f"Error looking up callbacks: {e}")
         return []
 
+def audio_file_exists(audio_path):
+    """Check if an audio file exists in any supported format.
+
+    Asterisk looks for files without extension and tries various formats.
+    We check for common formats: .wav, .ulaw, .gsm, .sln, .sln16
+    """
+    if not audio_path:
+        return False
+
+    # Remove extension if present to get base path
+    base_path = audio_path
+    for ext in ['.wav', '.ulaw', '.gsm', '.sln', '.sln16', '.mp3']:
+        if audio_path.endswith(ext):
+            base_path = audio_path[:-len(ext)]
+            break
+
+    # Check for any supported format
+    for ext in ['.wav', '.ulaw', '.gsm', '.sln', '.sln16']:
+        if os.path.exists(base_path + ext):
+            return True
+
+    # Also check if the original path exists as-is
+    if os.path.exists(audio_path):
+        return True
+
+    return False
+
+
 def main():
     """Main AGI handler"""
     # Read AGI environment
@@ -153,13 +181,29 @@ def main():
         agi_set_variable("CALLBACK_COUNT", "0")
         return
 
-    agi_verbose(f"Found {len(callbacks)} callback recordings")
+    agi_verbose(f"Found {len(callbacks)} callback entries in database")
+
+    # Filter to only include files that actually exist
+    valid_callbacks = []
+    for audio_file, broadcast_name, created_at in callbacks:
+        if audio_file_exists(audio_file):
+            valid_callbacks.append((audio_file, broadcast_name, created_at))
+            agi_verbose(f"  ✓ File exists: {audio_file}")
+        else:
+            agi_verbose(f"  ✗ File missing: {audio_file}")
+
+    if not valid_callbacks:
+        agi_verbose(f"No valid audio files found for {caller_number}")
+        agi_set_variable("CALLBACK_COUNT", "0")
+        return
+
+    agi_verbose(f"Returning {len(valid_callbacks)} valid callback recordings")
 
     # Set the count
-    agi_set_variable("CALLBACK_COUNT", str(len(callbacks)))
+    agi_set_variable("CALLBACK_COUNT", str(len(valid_callbacks)))
 
     # Set each audio file as a variable (CALLBACK_1, CALLBACK_2, etc.)
-    for i, (audio_file, broadcast_name, created_at) in enumerate(callbacks, 1):
+    for i, (audio_file, broadcast_name, created_at) in enumerate(valid_callbacks, 1):
         agi_set_variable(f"CALLBACK_{i}", audio_file)
         agi_set_variable(f"CALLBACK_{i}_NAME", broadcast_name or "Unknown")
         agi_verbose(f"  {i}. {broadcast_name}: {audio_file}")
