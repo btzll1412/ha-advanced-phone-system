@@ -76,7 +76,7 @@ PROMPTS = {
 
     # Admin PIN authentication prompts
     "enter-admin-pin": "Please enter your 4 digit admin PIN.",
-    "access-granted": "Access granted. Welcome to the broadcast system.",
+    "access-granted": "Access granted.",
     "incorrect-pin": "Incorrect PIN. Please try again.",
     "too-many-attempts": "Too many incorrect attempts. Access denied.",
 }
