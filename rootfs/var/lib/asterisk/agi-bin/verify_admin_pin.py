@@ -38,11 +38,12 @@ def agi_set_variable(name, value):
 
 def get_db_connection():
     """Get database connection"""
-    db_path = '/data/phone_system.db'
+    # Primary path - matches api_service.py
+    db_path = '/data/database/phone_system.db'
+    if not os.path.exists(db_path):
+        db_path = '/data/phone_system.db'
     if not os.path.exists(db_path):
         db_path = '/config/phone_system.db'
-    if not os.path.exists(db_path):
-        db_path = '/tmp/phone_system.db'
     return sqlite3.connect(db_path)
 
 def get_admin_pin():
