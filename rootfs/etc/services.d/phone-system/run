@@ -149,7 +149,6 @@ if [ "$SIP_ENABLED" = "true" ]; then
         echo "type=peer"
         echo "host=${SIP_HOST}"
         echo "port=${SIP_PORT}"
-        echo "transport=tcp"
         echo "defaultuser=${SIP_USER}"
         echo "secret=${SIP_PASS}"
         echo "fromdomain=${DOMAIN}"
