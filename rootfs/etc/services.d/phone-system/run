@@ -89,9 +89,6 @@ qualifygap=100
 session-timers=accept
 session-minse=90
 session-expires=1800
-
-; Keep-alive to prevent NAT timeout (send empty UDP packets)
-keepalive=20
 EOF
 
 # Add externaddr and localnet if we detected an external IP
@@ -152,7 +149,7 @@ if [ "$SIP_ENABLED" = "true" ]; then
         echo "type=peer"
         echo "host=${SIP_HOST}"
         echo "port=${SIP_PORT}"
-        echo "transport=tcp,udp"
+        echo "transport=tcp"
         echo "defaultuser=${SIP_USER}"
         echo "secret=${SIP_PASS}"
         echo "fromdomain=${DOMAIN}"
