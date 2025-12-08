@@ -1622,7 +1622,6 @@ async def make_call(request: Request):
             # Extract just the filename without path and extension for Asterisk
             # e.g. "/var/lib/asterisk/sounds/custom/outbound-123.wav" -> "outbound-123"
             # or "outbound-123.wav" -> "outbound-123"
-            import os.path
             base_name = os.path.basename(recording_file)
             # Remove extension
             audio_file = os.path.splitext(base_name)[0]
