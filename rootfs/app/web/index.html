@@ -1002,6 +1002,64 @@
                 </div>
             </div>
 
+            <!-- Call Settings Section -->
+            <div style="background: #f8f9fa; padding: 25px; border-radius: 10px; border-left: 4px solid #17a2b8; margin-bottom: 20px;">
+                <h3 style="margin-bottom: 15px; color: #333;">⚙️ Call Settings</h3>
+                <p style="color: #666; margin-bottom: 15px;">
+                    Configure outbound call behavior.
+                </p>
+
+                <div style="background: white; padding: 20px; border-radius: 8px;">
+                    <!-- AMD Toggle -->
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #eee;">
+                        <div>
+                            <h4 style="margin: 0 0 5px 0; color: #333;">Voicemail Detection (AMD)</h4>
+                            <p style="margin: 0; font-size: 14px; color: #666;">
+                                Automatically detect if a call goes to voicemail or is answered by a human.
+                                <br><span style="color: #dc3545;">Note: This adds ~2-5 seconds delay before audio plays.</span>
+                            </p>
+                        </div>
+                        <label class="toggle-switch" style="position: relative; display: inline-block; width: 60px; height: 34px;">
+                            <input type="checkbox" id="amd-enabled" onchange="saveCallSettings()" style="opacity: 0; width: 0; height: 0;">
+                            <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px;"></span>
+                        </label>
+                    </div>
+
+                    <!-- Default Caller ID Display -->
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <div>
+                            <h4 style="margin: 0 0 5px 0; color: #333;">Default Caller ID</h4>
+                            <p style="margin: 0; font-size: 14px; color: #666;">
+                                The caller ID used for outbound calls when no specific caller ID is selected.
+                            </p>
+                        </div>
+                        <div id="default-caller-id-display" style="font-size: 18px; font-weight: bold; color: #28a745;">
+                            Loading...
+                        </div>
+                    </div>
+                </div>
+
+                <style>
+                    .toggle-switch input:checked + span {
+                        background-color: #28a745;
+                    }
+                    .toggle-switch span:before {
+                        position: absolute;
+                        content: "";
+                        height: 26px;
+                        width: 26px;
+                        left: 4px;
+                        bottom: 4px;
+                        background-color: white;
+                        transition: .4s;
+                        border-radius: 50%;
+                    }
+                    .toggle-switch input:checked + span:before {
+                        transform: translateX(26px);
+                    }
+                </style>
+            </div>
+
             <!-- Backup & Restore Section -->
             <div style="background: #f8f9fa; padding: 25px; border-radius: 10px; border-left: 4px solid #6c757d; margin-bottom: 20px;">
                 <h3 style="margin-bottom: 15px; color: #333;">💾 Backup & Restore</h3>
@@ -2738,8 +2796,9 @@ function exportGroupCSV(groupName) {
             } catch (error) {
                 console.error('Error loading settings:', error);
             }
-            // Also load DIDs
+            // Also load DIDs and call settings
             loadDids();
+            loadCallSettings();
         }
 
         async function saveAdminPin() {
@@ -2973,6 +3032,55 @@ function exportGroupCSV(groupName) {
                 return document.getElementById(customInputId).value.trim();
             }
             return select.value;
+        }
+
+        // Call Settings functions
+        async function loadCallSettings() {
+            try {
+                const response = await fetch(`${API_URL}/api/settings/call`);
+                const data = await response.json();
+
+                // Set AMD toggle
+                const amdCheckbox = document.getElementById('amd-enabled');
+                if (amdCheckbox) {
+                    amdCheckbox.checked = data.amd_enabled !== false; // Default to true
+                }
+
+                // Display default caller ID
+                const callerIdDisplay = document.getElementById('default-caller-id-display');
+                if (callerIdDisplay) {
+                    if (data.default_caller_id) {
+                        callerIdDisplay.textContent = data.default_caller_id;
+                        callerIdDisplay.style.color = '#28a745';
+                    } else {
+                        callerIdDisplay.textContent = 'Not set';
+                        callerIdDisplay.style.color = '#dc3545';
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading call settings:', error);
+            }
+        }
+
+        async function saveCallSettings() {
+            try {
+                const amdEnabled = document.getElementById('amd-enabled').checked;
+
+                const response = await fetch(`${API_URL}/api/settings/call`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amd_enabled: amdEnabled })
+                });
+
+                if (response.ok) {
+                    console.log('Call settings saved');
+                } else {
+                    throw new Error('Failed to save settings');
+                }
+            } catch (error) {
+                console.error('Error saving call settings:', error);
+                alert('Failed to save settings');
+            }
         }
 
         // Backup & Restore functions

@@ -1392,6 +1392,9 @@ def create_call_file(phone_number: str, audio_file: str, caller_id: str = None,
     logger.info(f"Caller ID being used: {caller_id}")
     logger.info(f"Config caller_number: {config.get('sip_trunk', {}).get('caller_number')}")
     
+    # Check if AMD is enabled
+    amd_enabled = is_amd_enabled()
+
     # Build call file content with caller ID in the channel
     call_file_content = f"""Channel: SIP/trunk_main/{phone_number}
 CallerID: {caller_id}
@@ -1406,6 +1409,7 @@ Setvar: CALL_ID={call_id}
 Setvar: PHONE_NUMBER={phone_number}
 Setvar: PRE_MESSAGE_DELAY={pre_message_delay}
 Setvar: CUSTOM_CALLERID={caller_id}
+Setvar: AMD_ENABLED={1 if amd_enabled else 0}
 """
     
     # Log the actual call file content
@@ -1693,6 +1697,9 @@ async def make_call(request: Request):
             else:
                 callerid_line = f'CallerID: {caller_number}'
         
+        # Check if AMD is enabled
+        amd_enabled = is_amd_enabled()
+
         # Create call file
         call_file_content = f"""Channel: {channel}
 {callerid_line}
@@ -1708,6 +1715,7 @@ Setvar: PHONE_NUMBER={formatted_number}
 Setvar: CALL_DIRECTION={direction}
 Setvar: PRE_MESSAGE_DELAY=1
 Setvar: CUSTOM_CALLERID={caller_number or ''}
+Setvar: AMD_ENABLED={1 if amd_enabled else 0}
 """
 
         logger.info(f"📡 Channel: {channel}")
@@ -3010,6 +3018,83 @@ async def update_setting(key: str, request: dict):
     except Exception as e:
         logger.error(f"Error updating setting {key}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# CALL SETTINGS ENDPOINTS
+# ============================================================================
+
+@app.get("/api/settings/call")
+async def get_call_settings():
+    """Get call settings including AMD and default caller ID"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Get AMD enabled setting
+        cursor.execute('SELECT value FROM settings WHERE key = ?', ('amd_enabled',))
+        amd_row = cursor.fetchone()
+        amd_enabled = amd_row[0].lower() == 'true' if amd_row else True  # Default to True
+
+        # Get default caller ID from DIDs
+        cursor.execute('SELECT phone_number FROM dids WHERE is_default = 1 LIMIT 1')
+        did_row = cursor.fetchone()
+        default_caller_id = did_row[0] if did_row else None
+
+        conn.close()
+
+        return {
+            "amd_enabled": amd_enabled,
+            "default_caller_id": default_caller_id
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting call settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/settings/call")
+async def update_call_settings(request: dict):
+    """Update call settings"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Update AMD setting if provided
+        if 'amd_enabled' in request:
+            amd_value = 'true' if request['amd_enabled'] else 'false'
+            cursor.execute('''
+                INSERT INTO settings (key, value, updated_at)
+                VALUES ('amd_enabled', ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = CURRENT_TIMESTAMP
+            ''', (amd_value,))
+            logger.info(f"✅ AMD enabled set to: {amd_value}")
+
+        conn.commit()
+        conn.close()
+
+        return {"status": "success"}
+
+    except Exception as e:
+        logger.error(f"Error updating call settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def is_amd_enabled():
+    """Check if AMD is enabled in settings"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT value FROM settings WHERE key = ?', ('amd_enabled',))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return row[0].lower() == 'true'
+        return True  # Default to enabled
+    except:
+        return True  # Default to enabled on error
 
 
 # ============================================================================
