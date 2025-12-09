@@ -14,6 +14,9 @@ RUN apk add --no-cache \
     espeak \
     sox \
     ffmpeg \
+    fail2ban \
+    iptables \
+    ip6tables \
     && rm -rf /var/cache/apk/*
 
 # Install Python packages

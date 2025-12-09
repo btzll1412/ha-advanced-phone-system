@@ -50,6 +50,12 @@ options:
   recording_extension: "999"
   recording_password: "1234"
   timezone: "America/New_York"
+  security:
+    enabled: true
+    max_failed_attempts: 3
+    ban_time: 3600
+    allowed_ips: []
+    blocked_ips: []
 schema:
   sip_trunk:
     enabled: bool
@@ -80,6 +86,12 @@ schema:
   recording_extension: str
   recording_password: password
   timezone: str?
+  security:
+    enabled: bool?
+    max_failed_attempts: int(1,10)?
+    ban_time: int(60,86400)?
+    allowed_ips: [str]?
+    blocked_ips: [str]?
 homeassistant_api: true
 hassio_api: true
 hassio_role: default
