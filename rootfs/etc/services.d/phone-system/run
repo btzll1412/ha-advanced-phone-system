@@ -254,6 +254,12 @@ callgroup=1
 pickupgroup=1
 callerid="${EXT_NAME}" <${EXT_NUMBER}>
 setvar=OUTBOUND_CID=${EXT_CALLER_ID}
+; Security: Only allow local network IPs to register as extensions
+deny=0.0.0.0/0.0.0.0
+permit=192.168.0.0/255.255.0.0
+permit=10.0.0.0/255.0.0.0
+permit=172.16.0.0/255.240.0.0
+permit=127.0.0.1/255.255.255.255
 
 EOF
 done
