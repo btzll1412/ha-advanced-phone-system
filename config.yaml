@@ -87,11 +87,13 @@ schema:
   recording_password: password
   timezone: str?
   security:
-    enabled: bool?
-    max_failed_attempts: int(1,10)?
-    ban_time: int(60,86400)?
-    allowed_ips: [str]?
-    blocked_ips: [str]?
+    enabled: bool
+    max_failed_attempts: int(1,10)
+    ban_time: int(60,86400)
+    allowed_ips:
+      - str
+    blocked_ips:
+      - str
 homeassistant_api: true
 hassio_api: true
 hassio_role: default
