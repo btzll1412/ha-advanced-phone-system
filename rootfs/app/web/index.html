@@ -431,6 +431,7 @@
             <button class="tab" onclick="showTab('groups')">Contact Groups</button>
             <button class="tab" onclick="showTab('history')">Call History</button>
             <button class="tab" onclick="showTab('settings')">⚙️ Settings</button>
+            <button class="tab" onclick="showTab('security')">🛡️ Security</button>
         </div>
 
         <!-- Dashboard Tab -->
@@ -1098,6 +1099,84 @@
                 </div>
 
                 <div id="backup-status" style="margin-top: 15px; padding: 10px; border-radius: 5px; display: none;"></div>
+            </div>
+        </div>
+
+        <!-- Security Tab -->
+        <div id="security-tab" class="content hidden">
+            <h2 style="margin-bottom: 20px; color: #333;">🛡️ Security & Firewall</h2>
+
+            <div id="security-alert" class="alert" style="display: none;"></div>
+
+            <!-- Fail2ban Status Section -->
+            <div style="background: #f8f9fa; padding: 25px; border-radius: 10px; border-left: 4px solid #28a745; margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="color: #333;">🔒 Fail2ban Status</h3>
+                    <button onclick="loadSecurityStatus()" class="btn btn-small btn-secondary">🔄 Refresh</button>
+                </div>
+
+                <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 15px;">
+                    <div style="flex: 1; min-width: 150px; background: white; padding: 15px; border-radius: 8px; text-align: center;">
+                        <div id="fail2ban-status" style="font-size: 24px; font-weight: bold; color: #dc3545;">Unknown</div>
+                        <div style="color: #666; font-size: 14px;">Fail2ban</div>
+                    </div>
+                    <div style="flex: 1; min-width: 150px; background: white; padding: 15px; border-radius: 8px; text-align: center;">
+                        <div id="total-blocked" style="font-size: 24px; font-weight: bold; color: #667eea;">0</div>
+                        <div style="color: #666; font-size: 14px;">IPs Blocked</div>
+                    </div>
+                    <div style="flex: 1; min-width: 150px; background: white; padding: 15px; border-radius: 8px; text-align: center;">
+                        <div id="recent-attacks-count" style="font-size: 24px; font-weight: bold; color: #ffc107;">0</div>
+                        <div style="color: #666; font-size: 14px;">Recent Attacks</div>
+                    </div>
+                </div>
+
+                <p style="color: #666; font-size: 14px;">
+                    Fail2ban automatically blocks IP addresses after too many failed authentication attempts.
+                    IPs are banned for 1 hour by default, then automatically unbanned.
+                </p>
+            </div>
+
+            <!-- Blocked IPs Section -->
+            <div style="background: #f8f9fa; padding: 25px; border-radius: 10px; border-left: 4px solid #dc3545; margin-bottom: 20px;">
+                <h3 style="margin-bottom: 15px; color: #333;">🚫 Currently Blocked IPs</h3>
+                <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                    These IPs are currently blocked from accessing your phone system. Click "Unblock" to remove the block.
+                </p>
+
+                <div id="blocked-ips-list" style="background: white; border-radius: 8px; max-height: 300px; overflow-y: auto;">
+                    <div style="padding: 20px; text-align: center; color: #999;">Loading...</div>
+                </div>
+            </div>
+
+            <!-- Manual Block Section -->
+            <div style="background: #f8f9fa; padding: 25px; border-radius: 10px; border-left: 4px solid #667eea; margin-bottom: 20px;">
+                <h3 style="margin-bottom: 15px; color: #333;">➕ Manually Block IP</h3>
+                <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                    Block an IP address immediately. This block will last until manually removed or system restart.
+                </p>
+
+                <div style="display: flex; gap: 10px; align-items: end; flex-wrap: wrap;">
+                    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 200px;">
+                        <label for="block-ip-input">IP Address</label>
+                        <input type="text" id="block-ip-input" placeholder="e.g., 192.168.1.100"
+                               pattern="^[\d./]+$" style="width: 100%;">
+                    </div>
+                    <button onclick="manualBlockIP()" class="btn" style="background: #dc3545;">
+                        🚫 Block IP
+                    </button>
+                </div>
+            </div>
+
+            <!-- Recent Attacks Section -->
+            <div style="background: #f8f9fa; padding: 25px; border-radius: 10px; border-left: 4px solid #ffc107;">
+                <h3 style="margin-bottom: 15px; color: #333;">⚠️ Recent Attack Attempts</h3>
+                <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                    Recent failed authentication and registration attempts detected by Asterisk.
+                </p>
+
+                <div id="attacks-list" style="background: white; border-radius: 8px; max-height: 400px; overflow-y: auto;">
+                    <div style="padding: 20px; text-align: center; color: #999;">Loading...</div>
+                </div>
             </div>
         </div>
     </div>
@@ -3214,6 +3293,173 @@ function exportGroupCSV(groupName) {
                 loadCallRecords();
             }
         }, 10000);
+
+        // ===== SECURITY FUNCTIONS =====
+
+        async function loadSecurityStatus() {
+            try {
+                // Load security status
+                const statusResponse = await fetch(`${API_URL}/api/security/status`);
+                const statusData = await statusResponse.json();
+
+                // Update fail2ban status
+                const fail2banEl = document.getElementById('fail2ban-status');
+                if (statusData.fail2ban_running) {
+                    fail2banEl.textContent = 'Active';
+                    fail2banEl.style.color = '#28a745';
+                } else {
+                    fail2banEl.textContent = 'Inactive';
+                    fail2banEl.style.color = '#dc3545';
+                }
+
+                // Update total blocked count
+                document.getElementById('total-blocked').textContent = statusData.total_blocked || 0;
+
+                // Update blocked IPs list
+                const blockedList = document.getElementById('blocked-ips-list');
+                const allBlocked = [...new Set([...(statusData.banned_ips || []), ...(statusData.iptables_blocked || [])])];
+
+                if (allBlocked.length === 0) {
+                    blockedList.innerHTML = '<div style="padding: 20px; text-align: center; color: #28a745;">No IPs currently blocked</div>';
+                } else {
+                    blockedList.innerHTML = allBlocked.map(ip => `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; border-bottom: 1px solid #eee;">
+                            <div>
+                                <span style="font-family: monospace; font-weight: bold; color: #dc3545;">${ip}</span>
+                                <span style="color: #999; font-size: 12px; margin-left: 10px;">
+                                    ${statusData.banned_ips?.includes(ip) ? '(fail2ban)' : '(manual)'}
+                                </span>
+                            </div>
+                            <button onclick="unblockIP('${ip}')" class="btn btn-small btn-secondary" style="padding: 5px 15px;">
+                                Unblock
+                            </button>
+                        </div>
+                    `).join('');
+                }
+
+                // Load recent attacks
+                const attacksResponse = await fetch(`${API_URL}/api/security/attacks`);
+                const attacksData = await attacksResponse.json();
+
+                document.getElementById('recent-attacks-count').textContent = attacksData.count || 0;
+
+                const attacksList = document.getElementById('attacks-list');
+                if (!attacksData.attacks || attacksData.attacks.length === 0) {
+                    attacksList.innerHTML = '<div style="padding: 20px; text-align: center; color: #28a745;">No recent attacks detected</div>';
+                } else {
+                    attacksList.innerHTML = attacksData.attacks.map(attack => `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; border-bottom: 1px solid #eee;">
+                            <div style="flex: 1;">
+                                <span style="font-family: monospace; font-weight: bold; color: #dc3545;">${attack.ip}</span>
+                                <span style="background: ${getAttackTypeColor(attack.type)}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 10px;">
+                                    ${attack.type}
+                                </span>
+                                <div style="color: #999; font-size: 12px; margin-top: 4px;">${attack.timestamp}</div>
+                            </div>
+                            <button onclick="manualBlockIPDirect('${attack.ip}')" class="btn btn-small" style="background: #dc3545; padding: 5px 15px;">
+                                Block
+                            </button>
+                        </div>
+                    `).join('');
+                }
+
+            } catch (error) {
+                console.error('Error loading security status:', error);
+                showSecurityAlert('Error loading security status: ' + error.message, 'error');
+            }
+        }
+
+        function getAttackTypeColor(type) {
+            switch (type) {
+                case 'Registration Failed': return '#dc3545';
+                case 'Auth Failed': return '#fd7e14';
+                case 'Call Rejected': return '#ffc107';
+                default: return '#6c757d';
+            }
+        }
+
+        async function unblockIP(ip) {
+            if (!confirm(`Are you sure you want to unblock ${ip}?`)) return;
+
+            try {
+                const response = await fetch(`${API_URL}/api/security/unblock/${ip}`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    showSecurityAlert(`IP ${ip} has been unblocked`, 'success');
+                    loadSecurityStatus();
+                } else {
+                    showSecurityAlert(`Failed to unblock IP: ${data.message || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                showSecurityAlert('Error unblocking IP: ' + error.message, 'error');
+            }
+        }
+
+        async function manualBlockIP() {
+            const ip = document.getElementById('block-ip-input').value.trim();
+            if (!ip) {
+                showSecurityAlert('Please enter an IP address', 'error');
+                return;
+            }
+
+            // Basic IP validation
+            if (!/^[\d./]+$/.test(ip)) {
+                showSecurityAlert('Invalid IP address format', 'error');
+                return;
+            }
+
+            await manualBlockIPDirect(ip);
+            document.getElementById('block-ip-input').value = '';
+        }
+
+        async function manualBlockIPDirect(ip) {
+            if (!confirm(`Are you sure you want to block ${ip}? This will prevent all access from this IP.`)) return;
+
+            try {
+                const response = await fetch(`${API_URL}/api/security/block/${ip}`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    showSecurityAlert(`IP ${ip} has been blocked`, 'success');
+                    loadSecurityStatus();
+                } else {
+                    showSecurityAlert(`Failed to block IP: ${data.message || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                showSecurityAlert('Error blocking IP: ' + error.message, 'error');
+            }
+        }
+
+        function showSecurityAlert(message, type) {
+            const alertEl = document.getElementById('security-alert');
+            alertEl.textContent = message;
+            alertEl.className = 'alert alert-' + type;
+            alertEl.style.display = 'block';
+            setTimeout(() => { alertEl.style.display = 'none'; }, 5000);
+        }
+
+        // Load security status when security tab is shown
+        const originalShowTab = showTab;
+        showTab = function(tabName) {
+            originalShowTab(tabName);
+            if (tabName === 'security') {
+                loadSecurityStatus();
+            }
+        };
+
+        // Auto-refresh security tab every 30 seconds
+        setInterval(() => {
+            if (document.querySelector('.tab.active')?.textContent.includes('Security')) {
+                loadSecurityStatus();
+            }
+        }, 30000);
     </script>
 </body>
 </html>
