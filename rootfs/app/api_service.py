@@ -3509,6 +3509,180 @@ async def restore_backup(file: UploadFile = File(...)):
 
 
 # ============================================================================
+# SECURITY ENDPOINTS
+# ============================================================================
+
+@app.get("/api/security/status")
+async def get_security_status():
+    """Get fail2ban status and banned IPs"""
+    try:
+        # Check if fail2ban is running
+        result = subprocess.run(
+            ['pgrep', '-x', 'fail2ban-server'],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        fail2ban_running = result.returncode == 0
+
+        banned_ips = []
+        if fail2ban_running:
+            # Get banned IPs from fail2ban
+            result = subprocess.run(
+                ['fail2ban-client', 'status', 'asterisk'],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            if result.returncode == 0:
+                # Parse banned IPs from output
+                for line in result.stdout.split('\n'):
+                    if 'Banned IP list:' in line:
+                        ips = line.split(':')[1].strip()
+                        if ips:
+                            banned_ips = [ip.strip() for ip in ips.split()]
+
+        # Get iptables blocked IPs
+        result = subprocess.run(
+            ['iptables', '-L', 'INPUT', '-n'],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        iptables_blocked = []
+        if result.returncode == 0:
+            for line in result.stdout.split('\n'):
+                if 'DROP' in line and 'all' in line:
+                    parts = line.split()
+                    for part in parts:
+                        if '.' in part and part[0].isdigit():
+                            iptables_blocked.append(part)
+                            break
+
+        return {
+            "fail2ban_running": fail2ban_running,
+            "banned_ips": banned_ips,
+            "iptables_blocked": iptables_blocked,
+            "total_blocked": len(set(banned_ips + iptables_blocked))
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting security status: {e}")
+        return {"fail2ban_running": False, "banned_ips": [], "error": str(e)}
+
+
+@app.post("/api/security/block/{ip}")
+async def block_ip(ip: str):
+    """Manually block an IP address"""
+    try:
+        # Validate IP format (basic check)
+        import re
+        if not re.match(r'^[\d./]+$', ip):
+            raise HTTPException(status_code=400, detail="Invalid IP address format")
+
+        # Add to iptables
+        result = subprocess.run(
+            ['iptables', '-A', 'INPUT', '-s', ip, '-j', 'DROP'],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+
+        if result.returncode == 0:
+            logger.info(f"🚫 Blocked IP: {ip}")
+            return {"status": "success", "message": f"IP {ip} blocked"}
+        else:
+            raise HTTPException(status_code=500, detail=f"Failed to block IP: {result.stderr}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error blocking IP: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/security/unblock/{ip}")
+async def unblock_ip(ip: str):
+    """Unblock an IP address"""
+    try:
+        # Remove from iptables
+        result = subprocess.run(
+            ['iptables', '-D', 'INPUT', '-s', ip, '-j', 'DROP'],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+
+        # Also try to unban from fail2ban
+        subprocess.run(
+            ['fail2ban-client', 'set', 'asterisk', 'unbanip', ip],
+            capture_output=True,
+            check=False
+        )
+
+        logger.info(f"✅ Unblocked IP: {ip}")
+        return {"status": "success", "message": f"IP {ip} unblocked"}
+
+    except Exception as e:
+        logger.error(f"Error unblocking IP: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/security/attacks")
+async def get_recent_attacks():
+    """Get recent attack attempts from Asterisk logs"""
+    try:
+        attacks = []
+        log_file = "/var/log/asterisk/messages"
+
+        if os.path.exists(log_file):
+            result = subprocess.run(
+                ['tail', '-n', '500', log_file],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+
+            if result.returncode == 0:
+                import re
+                # Pattern to match failed auth and registration attempts
+                patterns = [
+                    (r'Registration from .* failed for \'(\d+\.\d+\.\d+\.\d+)', 'Registration Failed'),
+                    (r'Failed to authenticate.*\((\d+\.\d+\.\d+\.\d+)', 'Auth Failed'),
+                    (r'Call from .* \((\d+\.\d+\.\d+\.\d+):\d+\) to extension .* rejected', 'Call Rejected'),
+                ]
+
+                seen = set()
+                for line in result.stdout.split('\n'):
+                    for pattern, attack_type in patterns:
+                        match = re.search(pattern, line)
+                        if match:
+                            ip = match.group(1)
+                            key = f"{ip}:{attack_type}"
+                            if key not in seen:
+                                seen.add(key)
+                                # Extract timestamp if available
+                                time_match = re.match(r'\[([^\]]+)\]', line)
+                                timestamp = time_match.group(1) if time_match else "Unknown"
+                                attacks.append({
+                                    "ip": ip,
+                                    "type": attack_type,
+                                    "timestamp": timestamp,
+                                    "raw": line[:200]
+                                })
+
+        # Sort by timestamp (most recent first) and limit
+        attacks = attacks[-50:]
+        attacks.reverse()
+
+        return {"attacks": attacks, "count": len(attacks)}
+
+    except Exception as e:
+        logger.error(f"Error getting attacks: {e}")
+        return {"attacks": [], "error": str(e)}
+
+
+# ============================================================================
 # START SERVER
 # ============================================================================
 

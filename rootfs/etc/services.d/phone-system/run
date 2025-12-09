@@ -14,6 +14,11 @@ SIP_PASS=$(bashio::config 'sip_trunk.password')
 SIP_DOMAIN=$(bashio::config 'sip_trunk.from_domain')
 SIP_CALLER=$(bashio::config 'sip_trunk.caller_number')
 
+# Load security configuration
+SECURITY_ENABLED=$(bashio::config 'security.enabled' 'true')
+SECURITY_MAX_ATTEMPTS=$(bashio::config 'security.max_failed_attempts' '3')
+SECURITY_BAN_TIME=$(bashio::config 'security.ban_time' '3600')
+
 # Try to detect external IP for NAT traversal
 bashio::log.info "Detecting external IP for NAT configuration..."
 EXTERNAL_IP=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || curl -s --max-time 5 https://ifconfig.me 2>/dev/null || echo "")
@@ -318,6 +323,88 @@ bashio::log.info "  - Admin PIN access via * during inbound calls"
 chown -R asterisk:asterisk /etc/asterisk
 chown -R asterisk:asterisk /var/lib/asterisk
 chown -R asterisk:asterisk /var/spool/asterisk
+
+# ===== SECURITY SETUP =====
+if [ "$SECURITY_ENABLED" = "true" ]; then
+    bashio::log.info "Configuring SIP security..."
+
+    # Create Asterisk log directory if it doesn't exist
+    mkdir -p /var/log/asterisk
+    touch /var/log/asterisk/messages
+    chown -R asterisk:asterisk /var/log/asterisk
+
+    # Configure Asterisk to log to file for fail2ban
+    cat > /etc/asterisk/logger.conf <<'LOGGER_EOF'
+[general]
+dateformat=%F %T
+
+[logfiles]
+messages => notice,warning,error,security
+console => notice,warning,error
+LOGGER_EOF
+
+    # Configure fail2ban for Asterisk
+    bashio::log.info "Setting up fail2ban auto-blocking..."
+
+    mkdir -p /var/run/fail2ban
+    mkdir -p /var/log/fail2ban
+
+    # Build ignore IP list (always include localhost and local networks)
+    IGNORE_IPS="127.0.0.1/8 ::1 192.168.0.0/16 10.0.0.0/8 172.16.0.0/12"
+
+    # Add user-configured allowed IPs
+    ALLOWED_IPS_COUNT=$(bashio::config 'security.allowed_ips|length' 2>/dev/null || echo "0")
+    if [ "$ALLOWED_IPS_COUNT" != "0" ] && [ "$ALLOWED_IPS_COUNT" != "null" ]; then
+        for i in $(seq 0 $((ALLOWED_IPS_COUNT - 1))); do
+            ALLOWED_IP=$(bashio::config "security.allowed_ips[${i}]")
+            if [ -n "$ALLOWED_IP" ] && [ "$ALLOWED_IP" != "null" ]; then
+                IGNORE_IPS="$IGNORE_IPS $ALLOWED_IP"
+                bashio::log.info "  Whitelisted IP: ${ALLOWED_IP}"
+            fi
+        done
+    fi
+
+    # Update fail2ban jail configuration
+    cat > /etc/fail2ban/jail.d/asterisk.conf <<JAIL_EOF
+[asterisk]
+enabled = true
+filter = asterisk
+action = iptables-allports[name=asterisk, protocol=all]
+logpath = /var/log/asterisk/messages
+maxretry = ${SECURITY_MAX_ATTEMPTS}
+bantime = ${SECURITY_BAN_TIME}
+findtime = 600
+ignoreip = ${IGNORE_IPS}
+JAIL_EOF
+
+    # Add blocked IPs to iptables directly
+    BLOCKED_IPS_COUNT=$(bashio::config 'security.blocked_ips|length' 2>/dev/null || echo "0")
+    if [ "$BLOCKED_IPS_COUNT" != "0" ] && [ "$BLOCKED_IPS_COUNT" != "null" ]; then
+        bashio::log.info "Applying IP blocklist..."
+        for i in $(seq 0 $((BLOCKED_IPS_COUNT - 1))); do
+            BLOCKED_IP=$(bashio::config "security.blocked_ips[${i}]")
+            if [ -n "$BLOCKED_IP" ] && [ "$BLOCKED_IP" != "null" ]; then
+                iptables -A INPUT -s "$BLOCKED_IP" -j DROP 2>/dev/null || true
+                bashio::log.info "  Blocked IP: ${BLOCKED_IP}"
+            fi
+        done
+    fi
+
+    # Start fail2ban
+    bashio::log.info "Starting fail2ban service..."
+    fail2ban-client -x start 2>/dev/null || fail2ban-server -b 2>/dev/null || true
+    sleep 2
+
+    # Check if fail2ban started
+    if pgrep -x "fail2ban-server" > /dev/null 2>&1; then
+        bashio::log.info "✓ Fail2ban started - auto-blocking enabled (ban after ${SECURITY_MAX_ATTEMPTS} attempts for ${SECURITY_BAN_TIME}s)"
+    else
+        bashio::log.warning "⚠ Fail2ban could not start - manual IP blocking still active"
+    fi
+else
+    bashio::log.warning "⚠ Security features disabled - SIP attacks will not be auto-blocked"
+fi
+# ===== END SECURITY SETUP =====
 
 # Kill any existing Asterisk processes
 bashio::log.info "Cleaning up any existing Asterisk processes..."
