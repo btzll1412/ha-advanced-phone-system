@@ -2650,6 +2650,47 @@ async def play_recording(filename: str, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/recordings/download/{filename}")
+async def download_recording(filename: str):
+    """Download a recording file"""
+    try:
+        file_path = os.path.join(ASTERISK_SOUNDS, filename)
+
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="Recording not found")
+
+        file_size = os.path.getsize(file_path)
+
+        if file_size < 100:
+            raise HTTPException(status_code=400, detail="Recording file is empty or corrupted")
+
+        # Determine media type based on file extension
+        ext = os.path.splitext(filename)[1].lower()
+        media_types = {
+            '.wav': 'audio/wav',
+            '.mp3': 'audio/mpeg',
+            '.gsm': 'audio/x-gsm',
+            '.ulaw': 'audio/basic'
+        }
+        media_type = media_types.get(ext, 'application/octet-stream')
+
+        return FileResponse(
+            file_path,
+            media_type=media_type,
+            filename=filename,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Length": str(file_size)
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error downloading recording: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/recordings/register")
 async def register_recording(filename: str, recording_id: str):
     """Register a recording created via phone system"""

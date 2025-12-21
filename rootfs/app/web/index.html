@@ -1476,6 +1476,7 @@
                         <div class="recording-actions">
                             <button class="btn btn-secondary btn-small" onclick="playRecording('${r.filename}')">Play</button>
                             <button class="btn btn-danger btn-small" onclick="stopRecording()">Stop</button>
+                            <button class="btn btn-secondary btn-small" onclick="downloadRecording('${r.filename}')">Download</button>
                             <button class="btn btn-secondary btn-small" onclick="renameRecording('${r.filename}')">Rename</button>
                             <button class="btn btn-danger btn-small" onclick="deleteRecording('${r.filename}')">Delete</button>
                         </div>
@@ -1526,6 +1527,15 @@
                 currentAudio.pause();
                 currentAudio = null;
             }
+        }
+
+        function downloadRecording(filename) {
+            const link = document.createElement('a');
+            link.href = `${API_URL}/api/recordings/download/${encodeURIComponent(filename)}`;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
 
         async function renameRecording(filename) {
