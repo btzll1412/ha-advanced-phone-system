@@ -134,6 +134,56 @@ call_with_sensor:
           min: 0
           max: 10
 
+broadcast_with_sensor:
+  name: Broadcast with Sensor Data
+  description: Send a broadcast with dynamic sensor values in message to multiple phone numbers
+  fields:
+    name:
+      name: Broadcast Name
+      description: Name for this broadcast
+      required: true
+      example: "Weather Alert"
+      selector:
+        text:
+    phone_numbers:
+      name: Phone Numbers
+      description: List of phone numbers to call
+      required: false
+      example: ["+1234567890", "+1234567891"]
+      selector:
+        object:
+    group_name:
+      name: Group Name
+      description: Name of saved contact group
+      required: false
+      example: "Family"
+      selector:
+        text:
+    message:
+      name: Message Template
+      description: Message with sensor templates (supports Home Assistant entity states)
+      required: true
+      example: "Alert! Temperature is {{ states('sensor.temperature') }} degrees. Humidity is {{ states('sensor.humidity') }} percent."
+      selector:
+        text:
+          multiline: true
+    caller_id:
+      name: Caller ID
+      description: Caller ID to display
+      required: false
+      example: "Weather Service"
+      selector:
+        text:
+    concurrent_calls:
+      name: Concurrent Calls
+      description: Maximum simultaneous calls
+      required: false
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 20
+
 create_group:
   name: Create Contact Group
   description: Create a new contact group
