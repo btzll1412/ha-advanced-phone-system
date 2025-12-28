@@ -54,6 +54,15 @@ TTS_CALL_SCHEMA = vol.Schema({
     vol.Optional("max_retries", default=3): cv.positive_int,
 })
 
+TTS_BROADCAST_SCHEMA = vol.Schema({
+    vol.Required("name"): cv.string,
+    vol.Optional("phone_numbers"): vol.All(cv.ensure_list, [cv.string]),
+    vol.Optional("group_name"): cv.string,
+    vol.Required("message"): cv.template,
+    vol.Optional("caller_id"): cv.string,
+    vol.Optional("concurrent_calls", default=5): cv.positive_int,
+})
+
 CONTACT_SCHEMA = vol.Schema({
     vol.Required("name"): cv.string,
     vol.Required("phone_number"): cv.string,
@@ -201,7 +210,55 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 
         except Exception as e:
             _LOGGER.error(f"Error making TTS call: {e}")
-    
+
+    async def broadcast_with_sensor(call: ServiceCall) -> None:
+        """Create a broadcast with sensor data in TTS."""
+        name = call.data.get("name")
+        phone_numbers = call.data.get("phone_numbers")
+        group_name = call.data.get("group_name")
+        message_template = call.data.get("message")
+        caller_id = call.data.get("caller_id")
+        concurrent_calls = call.data.get("concurrent_calls", 5)
+
+        # Render template with sensor data
+        message_template.hass = hass
+        rendered_message = message_template.async_render()
+
+        payload = {
+            "name": name,
+            "tts_text": rendered_message,
+            "concurrent_calls": concurrent_calls
+        }
+
+        if phone_numbers:
+            payload["phone_numbers"] = phone_numbers
+        if group_name:
+            payload["group_name"] = group_name
+        if caller_id:
+            payload["caller_id"] = caller_id
+
+        try:
+            response = await hass.async_add_executor_job(
+                lambda: requests.post(f"{api_url}/api/broadcast", json=payload, timeout=10)
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                _LOGGER.info(f"TTS Broadcast created: {result.get('broadcast_id')}")
+
+                hass.bus.async_fire(f"{DOMAIN}_broadcast_started", {
+                    "broadcast_id": result.get("broadcast_id"),
+                    "name": name,
+                    "total_numbers": result.get("total_numbers"),
+                    "rendered_message": rendered_message,
+                    "timestamp": datetime.now().isoformat()
+                })
+            else:
+                _LOGGER.error(f"Failed to create TTS broadcast: {response.status_code}")
+
+        except Exception as e:
+            _LOGGER.error(f"Error creating TTS broadcast: {e}")
+
     async def create_group(call: ServiceCall) -> None:
         """Create a contact group."""
         name = call.data.get("name")
@@ -254,11 +311,15 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.services.async_register(
         DOMAIN, "call_with_sensor", call_with_sensor, schema=TTS_CALL_SCHEMA
     )
-    
+
+    hass.services.async_register(
+        DOMAIN, "broadcast_with_sensor", broadcast_with_sensor, schema=TTS_BROADCAST_SCHEMA
+    )
+
     hass.services.async_register(
         DOMAIN, "create_group", create_group, schema=GROUP_SCHEMA
     )
-    
+
     _LOGGER.info("Advanced Phone System services registered")
     
     return True
