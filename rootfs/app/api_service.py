@@ -1614,6 +1614,10 @@ async def make_call(request: Request):
         message = data.get('message') or data.get('tts_text', '')  # Might be empty!
         recording_file = data.get('recording_file', '')  # Pre-recorded audio file
         custom_caller_id = data.get('caller_id', None)
+        # Parameters sent by the HACS integration (default to safe values if absent)
+        max_ring_time = int(data.get('max_ring_time', 45))
+        max_retries = int(data.get('max_retries', 2))
+        pre_message_delay = int(data.get('pre_message_delay', 1))
 
         logger.info(f"📞 Call request: {phone_number}")
 
@@ -1703,9 +1707,9 @@ async def make_call(request: Request):
         # Create call file
         call_file_content = f"""Channel: {channel}
 {callerid_line}
-MaxRetries: 2
+MaxRetries: {max_retries}
 RetryTime: 60
-WaitTime: 30
+WaitTime: {max_ring_time}
 Context: outbound-playback
 Extension: s
 Priority: 1
@@ -1713,7 +1717,7 @@ Setvar: AUDIO_FILE={audio_file}
 Setvar: CALL_ID={call_id}
 Setvar: PHONE_NUMBER={formatted_number}
 Setvar: CALL_DIRECTION={direction}
-Setvar: PRE_MESSAGE_DELAY=1
+Setvar: PRE_MESSAGE_DELAY={pre_message_delay}
 Setvar: CUSTOM_CALLERID={caller_number or ''}
 Setvar: AMD_ENABLED={1 if amd_enabled else 0}
 """

@@ -89,23 +89,35 @@ for (( i=0; i<${EXT_COUNT}; i++ )); do
     EXT_NAME=$(bashio::config "extensions[${i}].name")
     EXT_SECRET=$(bashio::config "extensions[${i}].secret")
     EXT_CALLER_ID=$(bashio::config "extensions[${i}].caller_id" || echo "")
-    
+    EXT_HOST=$(bashio::config "extensions[${i}].host" 2>/dev/null || echo "")
+
     if [ -z "${EXT_CALLER_ID}" ] || [ "${EXT_CALLER_ID}" == "null" ]; then
         OUTBOUND_CID="null"
     else
         OUTBOUND_CID="${EXT_CALLER_ID}"
     fi
-    
+
+    # Use static IP if provided (e.g. Algo speakers), otherwise require SIP registration
+    if [ -n "${EXT_HOST}" ] && [ "${EXT_HOST}" != "null" ] && [ "${EXT_HOST}" != "" ]; then
+        HOST_LINE="host=${EXT_HOST}"
+        QUALIFY_LINE="qualify=yes"
+        bashio::log.info "Extension ${EXT_NUMBER} (${EXT_NAME}): static host ${EXT_HOST}"
+    else
+        HOST_LINE="host=dynamic"
+        QUALIFY_LINE="qualify=no"
+        bashio::log.info "Extension ${EXT_NUMBER} (${EXT_NAME}): dynamic host (requires SIP registration)"
+    fi
+
     {
         echo "[${EXT_NUMBER}]"
         echo "type=friend"
         echo "secret=${EXT_SECRET}"
         echo "context=internal"
-        echo "host=dynamic"
+        echo "${HOST_LINE}"
         echo "dtmfmode=rfc2833"
         echo "canreinvite=no"
         echo "nat=force_rport,comedia"
-        echo "qualify=yes"
+        echo "${QUALIFY_LINE}"
         echo "callgroup=1"
         echo "pickupgroup=1"
         echo "callerid=\"${EXT_NAME}\" <${EXT_NUMBER}>"
