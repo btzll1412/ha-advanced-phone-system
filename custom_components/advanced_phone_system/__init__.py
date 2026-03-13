@@ -75,6 +75,13 @@ GROUP_SCHEMA = vol.Schema({
     vol.Optional("caller_id"): cv.string,
 })
 
+EXTENSION_CALL_SCHEMA = vol.Schema({
+    vol.Required("extension"): cv.string,
+    vol.Optional("recording_file"): cv.string,
+    vol.Optional("tts_text"): cv.string,
+    vol.Optional("caller_id"): cv.string,
+})
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Advanced Phone System integration."""
     conf = config.get(DOMAIN, {})
@@ -259,6 +266,44 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         except Exception as e:
             _LOGGER.error(f"Error creating TTS broadcast: {e}")
 
+    async def call_extension(call: ServiceCall) -> None:
+        """Call an internal SIP extension and play a recording or TTS message."""
+        extension = call.data.get("extension")
+        recording_file = call.data.get("recording_file")
+        tts_text = call.data.get("tts_text")
+        caller_id = call.data.get("caller_id")
+
+        payload = {
+            "phone_number": extension,
+            "caller_id": caller_id,
+        }
+
+        if recording_file:
+            payload["recording_file"] = recording_file
+        elif tts_text:
+            payload["tts_text"] = tts_text
+
+        try:
+            response = await hass.async_add_executor_job(
+                lambda: requests.post(f"{api_url}/api/call", json=payload, timeout=10)
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                _LOGGER.info(f"Extension call initiated: {result.get('call_id')} to extension {extension}")
+
+                hass.bus.async_fire(f"{DOMAIN}_call_initiated", {
+                    "call_id": result.get("call_id"),
+                    "phone_number": extension,
+                    "direction": "internal",
+                    "timestamp": datetime.now().isoformat()
+                })
+            else:
+                _LOGGER.error(f"Failed to call extension {extension}: {response.status_code}")
+
+        except Exception as e:
+            _LOGGER.error(f"Error calling extension {extension}: {e}")
+
     async def create_group(call: ServiceCall) -> None:
         """Create a contact group."""
         name = call.data.get("name")
@@ -318,6 +363,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     hass.services.async_register(
         DOMAIN, "create_group", create_group, schema=GROUP_SCHEMA
+    )
+
+    hass.services.async_register(
+        DOMAIN, "call_extension", call_extension, schema=EXTENSION_CALL_SCHEMA
     )
 
     _LOGGER.info("Advanced Phone System services registered")

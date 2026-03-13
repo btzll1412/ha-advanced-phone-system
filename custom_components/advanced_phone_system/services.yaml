@@ -184,6 +184,40 @@ broadcast_with_sensor:
           min: 1
           max: 20
 
+call_extension:
+  name: Call Extension
+  description: Call an internal SIP extension (e.g., an Algo speaker) and play a recording or TTS message. No AMD or callback is triggered — the audio plays as soon as the extension answers.
+  fields:
+    extension:
+      name: Extension Number
+      description: Internal SIP extension number to call (2-4 digits, e.g., "100", "200")
+      required: true
+      example: "200"
+      selector:
+        text:
+    recording_file:
+      name: Recording File
+      description: Name of a pre-uploaded audio file to play (filename only, without path, e.g., "alert.wav")
+      required: false
+      example: "alert.wav"
+      selector:
+        text:
+    tts_text:
+      name: TTS Message
+      description: Text to convert to speech and play on the extension
+      required: false
+      example: "Motion detected at the front door"
+      selector:
+        text:
+          multiline: true
+    caller_id:
+      name: Caller ID
+      description: Label shown as the caller on the extension display
+      required: false
+      example: "Home Assistant"
+      selector:
+        text:
+
 create_group:
   name: Create Contact Group
   description: Create a new contact group
