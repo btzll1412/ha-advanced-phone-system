@@ -1745,29 +1745,33 @@ Setvar: AMD_ENABLED={1 if amd_enabled else 0}
             broadcast_id=None
         )
 
-        # Create callback entry so recipient can call back and hear the message
-        try:
-            conn = get_db()
-            cursor = conn.cursor()
-            # Normalize recipient number for matching
-            normalized_recipient = ''.join(c for c in formatted_number if c.isdigit())
-            if len(normalized_recipient) > 10:
-                normalized_recipient = normalized_recipient[-10:]
-            expires_at = (datetime.now() + timedelta(days=7)).isoformat()
+        # Skip callback creation for internal extension calls (SIP devices don't call back)
+        if direction == CallDirection.INTERNAL:
+            logger.info(f"📞 Internal call to extension {formatted_number} - skipping callback creation")
+        else:
+            # Create callback entry so recipient can call back and hear the message
+            try:
+                conn = get_db()
+                cursor = conn.cursor()
+                # Normalize recipient number for matching
+                normalized_recipient = ''.join(c for c in formatted_number if c.isdigit())
+                if len(normalized_recipient) > 10:
+                    normalized_recipient = normalized_recipient[-10:]
+                expires_at = (datetime.now() + timedelta(days=7)).isoformat()
 
-            # Get full audio path for callback
-            full_audio_path = f"/var/lib/asterisk/sounds/custom/{audio_file}.wav" if not audio_file.startswith('/') else audio_file
+                # Get full audio path for callback
+                full_audio_path = f"/var/lib/asterisk/sounds/custom/{audio_file}.wav" if not audio_file.startswith('/') else audio_file
 
-            cursor.execute('''
-                INSERT INTO broadcast_callbacks
-                (caller_id, audio_file, broadcast_id, broadcast_name, expires_at, enabled)
-                VALUES (?, ?, ?, ?, ?, 1)
-            ''', (normalized_recipient, full_audio_path, call_id, f"Call to {formatted_number}", expires_at))
-            conn.commit()
-            conn.close()
-            logger.info(f"📞 Callback created for {normalized_recipient}")
-        except Exception as cb_err:
-            logger.warning(f"Could not create callback: {cb_err}")
+                cursor.execute('''
+                    INSERT INTO broadcast_callbacks
+                    (caller_id, audio_file, broadcast_id, broadcast_name, expires_at, enabled)
+                    VALUES (?, ?, ?, ?, ?, 1)
+                ''', (normalized_recipient, full_audio_path, call_id, f"Call to {formatted_number}", expires_at))
+                conn.commit()
+                conn.close()
+                logger.info(f"📞 Callback created for {normalized_recipient}")
+            except Exception as cb_err:
+                logger.warning(f"Could not create callback: {cb_err}")
 
         return {
             "status": "success",
