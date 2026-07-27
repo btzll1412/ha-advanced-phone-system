@@ -180,10 +180,13 @@ fi
 # Configure Asterisk CDR (Call Detail Records)
 bashio::log.info "Configuring Call Detail Records..."
 
-cat > /etc/asterisk/cdr_custom.conf <<'EOF'
-[mappings]
-Master.csv => ${CSV_QUOTE(${CDR(clid)})},${CSV_QUOTE(${CDR(src)})},${CSV_QUOTE(${CDR(dst)})},${CSV_QUOTE(${CDR(dcontext)})},${CSV_QUOTE(${CDR(channel)})},${CSV_QUOTE(${CDR(dstchannel)})},${CSV_QUOTE(${CDR(lastapp)})},${CSV_QUOTE(${CDR(lastdata)})},${CSV_QUOTE(${CDR(start)})},${CSV_QUOTE(${CDR(answer)})},${CSV_QUOTE(${CDR(end)})},${CSV_QUOTE(${CDR(duration)})},${CSV_QUOTE(${CDR(billsec)})},${CSV_QUOTE(${CDR(disposition)})},${CSV_QUOTE(${CDR(amaflags)})},${CSV_QUOTE(${CDR(uniqueid)})}
-EOF
+# NOTE: The API reads the stock cdr_csv output at
+# /var/log/asterisk/cdr-csv/Master.csv (18-column standard layout incl.
+# userfield). We intentionally do NOT configure cdr_custom here - a custom
+# mapping wrote a different file/column layout that the parser could not read,
+# which left calls stuck as "active" because completion records were never
+# imported. Remove any stale custom mapping from previous versions.
+rm -f /etc/asterisk/cdr_custom.conf 2>/dev/null || true
 
 cat > /etc/asterisk/cdr.conf <<'EOF'
 [general]
@@ -432,6 +435,15 @@ if kill -0 $ASTERISK_PID 2>/dev/null; then
 else
     bashio::log.error "✗ Asterisk failed to start!"
     exit 1
+fi
+
+# Verify the CDR CSV backend is registered - without it, call completion
+# records are never written and calls stay "active" on the dashboard forever.
+CDR_STATUS=$(asterisk -rx "cdr show status" 2>/dev/null || true)
+if echo "$CDR_STATUS" | grep -qi "csv"; then
+    bashio::log.info "✓ CDR CSV backend registered"
+else
+    bashio::log.warning "⚠ CDR CSV backend NOT detected - call status may not update. Output: ${CDR_STATUS}"
 fi
 
 # Start API service

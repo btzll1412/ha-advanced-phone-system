@@ -464,13 +464,24 @@ async def monitor_cdr():
     while True:
         try:
             if os.path.exists(CDR_FILE):
+                # Detect rotation/truncation: if the file is now smaller than
+                # where we last read, it was rotated - start over from the top
+                # instead of seeking past EOF (which would silently stop imports).
+                file_size = os.path.getsize(CDR_FILE)
+                if file_size < last_position:
+                    logger.warning(
+                        f"CDR file shrank ({file_size} < {last_position}); "
+                        "resetting to start (log rotation?)"
+                    )
+                    last_position = 0
+
                 with open(CDR_FILE, 'r') as f:
                     if first_run:
                         f.seek(0)
                         first_run = False
                     else:
                         f.seek(last_position)
-                    
+
                     reader = csv.reader(f)
                     for row in reader:
                         if len(row) >= 17:
@@ -483,6 +494,59 @@ async def monitor_cdr():
         except Exception as e:
             logger.error(f"CDR monitoring error: {e}")
             await asyncio.sleep(5)
+
+
+async def cleanup_stale_active_calls():
+    """Safety net: mark calls stuck in an active state as ended.
+
+    The dashboard derives "active" calls purely from call_history.status, and the
+    only path that normally clears them is the CDR watcher. If a CDR record is
+    ever missed (log rotation, module misconfig, an unmatched row) a call would
+    otherwise show as active forever with an ever-growing duration. This periodic
+    sweep bounds that failure mode:
+      - never-connected calls (initiated/ringing) older than RING_TIMEOUT become
+        'no_answer'
+      - answered calls older than MAX_CALL_DURATION become 'completed' (the CDR
+        normally clears these long before this catch-all fires)
+    """
+    RING_TIMEOUT_SECONDS = 120
+    MAX_CALL_DURATION_SECONDS = 4 * 60 * 60  # 4 hours
+
+    while True:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                UPDATE call_history
+                SET status = 'no_answer',
+                    ended_at = CURRENT_TIMESTAMP
+                WHERE status IN ('initiated', 'ringing')
+                  AND (strftime('%s', 'now') - strftime('%s', started_at)) > ?
+            ''', (RING_TIMEOUT_SECONDS,))
+            ring_cleared = cursor.rowcount
+
+            cursor.execute('''
+                UPDATE call_history
+                SET status = 'completed',
+                    ended_at = CURRENT_TIMESTAMP
+                WHERE status = 'answered'
+                  AND (strftime('%s', 'now') - strftime('%s', started_at)) > ?
+            ''', (MAX_CALL_DURATION_SECONDS,))
+            answered_cleared = cursor.rowcount
+
+            conn.commit()
+            conn.close()
+
+            if ring_cleared or answered_cleared:
+                logger.info(
+                    f"🧹 Stale-call sweep: cleared {ring_cleared} unanswered, "
+                    f"{answered_cleared} long-answered calls"
+                )
+        except Exception as e:
+            logger.error(f"Stale-call cleanup error: {e}")
+
+        await asyncio.sleep(30)
 
 
 async def process_cdr_record(row):
@@ -518,8 +582,6 @@ async def process_cdr_record(row):
         clid = row[4]
         channel = row[5]
         dst_channel = row[6]
-        # DEBUG: Log the channel to see what we're working with
-        logger.info(f"🔍 DEBUG - channel: {channel}, context: {context}")
         lastapp = row[7]
         lastdata = row[8]
         start = row[9]
@@ -730,13 +792,17 @@ async def process_cdr_record(row):
         amd_info = f", AMD: {amd_result}" if amd_result else ""
         logger.info(f"📞 Recorded call: {source} → {dest} ({call_type}) - Duration: {duration_int}s, Talk: {billsec_int}s, Status: {disposition}{amd_info}")
 
-        # Update call_history status for ALL outbound calls (not just outbound-playback)
-        # This catches calls regardless of their context, as long as they went through the trunk
-        is_outbound_trunk_call = "trunk_main" in channel
+        # Update call_history status for ALL outbound calls (not just outbound-playback).
+        # This catches calls regardless of their context, as long as they went
+        # through the trunk. Call-file originated calls often have dst='s' and the
+        # trunk in dstchannel rather than channel, so check BOTH channels and the
+        # userfield direction marker set by the dialplan.
+        is_outbound_trunk_call = "trunk_main" in channel or "trunk_main" in dst_channel
+        is_outbound_userfield = userfield_type == "OUTBOUND"
         is_outbound_context = context in ("outbound-playback", "default", "internal", "from-asterisk")
         is_outbound_number = dest and len(dest) >= 10 and dest.isdigit()
 
-        if is_outbound_trunk_call or (is_outbound_context and is_outbound_number):
+        if is_outbound_trunk_call or is_outbound_userfield or (is_outbound_context and is_outbound_number):
             logger.info(f"🔄 Updating call_history for outbound call to {dest}")
             update_call_history_from_cdr(dest, duration_int, billsec_int, disposition)
 
@@ -893,6 +959,9 @@ async def startup_event():
 
     asyncio.create_task(monitor_cdr())
     logger.info("✓ CDR monitoring task started")
+
+    asyncio.create_task(cleanup_stale_active_calls())
+    logger.info("✓ Stale-call cleanup task started")
 
     asyncio.create_task(run_scheduler())
     logger.info("✓ Call scheduler task started")
