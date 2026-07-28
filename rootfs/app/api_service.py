@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 import sqlite3
 import subprocess
@@ -238,14 +239,21 @@ async def auth_middleware(request: Request, call_next):
     """Check authentication for protected endpoints"""
     path = request.url.path
 
-    # Public endpoints that don't require authentication
+    # Public endpoints that don't require authentication.
+    # NOTE: do NOT put "/api" here - the matcher below also treats each entry
+    # as a path prefix ("/api/..."), which would whitelist the ENTIRE API and
+    # bypass authentication. The bare "/api" info endpoint is still covered by
+    # the exact-match branch (path == p) below.
     public_paths = [
         "/login",
         "/api/auth/login",
         "/api/auth/status",
         "/api/auth/logout",
-        "/api",  # Info endpoint
     ]
+
+    # The bare "/api" info endpoint is public by exact match only.
+    if path == "/api":
+        return await call_next(request)
 
     # Static files and assets
     if path.startswith("/static") or path.endswith(".css") or path.endswith(".js"):
@@ -278,6 +286,44 @@ RECORDINGS_PATH = "/data/recordings"
 ASTERISK_SOUNDS = "/var/lib/asterisk/sounds/custom"
 # CDR file path
 CDR_FILE = "/var/log/asterisk/cdr-csv/Master.csv"
+
+
+# ============================================================================
+# INPUT SANITIZATION HELPERS
+# ============================================================================
+
+def sanitize_call_file_value(value) -> str:
+    """Sanitize a value before interpolating it into an Asterisk call file.
+
+    Spool call files are newline-delimited "Key: value" records. A CR/LF (or
+    any other control character) embedded in user-supplied input (caller ID,
+    phone number, audio filename) would let an attacker inject extra directives
+    such as 'Application: System' / 'Data: <cmd>', which Asterisk would then
+    execute. Strip all control characters so every value stays on one line.
+    """
+    if value is None:
+        return ""
+    return re.sub(r'[\x00-\x1f\x7f]', '', str(value))
+
+
+def safe_recording_path(filename: str) -> str:
+    """Resolve a user-supplied recording name to a path inside ASTERISK_SOUNDS.
+
+    Blocks path traversal (e.g. '../../data/database/phone_system.db') by
+    rejecting any directory component and verifying the resolved real path
+    stays within the recordings directory. Raises HTTPException(400) otherwise.
+    """
+    if not filename or filename in ('.', '..'):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    if '/' in filename or '\\' in filename or '..' in filename or '\x00' in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    if os.path.basename(filename) != filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    sounds_root = os.path.realpath(ASTERISK_SOUNDS)
+    resolved = os.path.realpath(os.path.join(sounds_root, filename))
+    if resolved != sounds_root and not resolved.startswith(sounds_root + os.sep):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    return resolved
 
 
 # Home Assistant API
@@ -464,13 +510,24 @@ async def monitor_cdr():
     while True:
         try:
             if os.path.exists(CDR_FILE):
+                # Detect rotation/truncation: if the file is now smaller than
+                # where we last read, it was rotated - start over from the top
+                # instead of seeking past EOF (which would silently stop imports).
+                file_size = os.path.getsize(CDR_FILE)
+                if file_size < last_position:
+                    logger.warning(
+                        f"CDR file shrank ({file_size} < {last_position}); "
+                        "resetting to start (log rotation?)"
+                    )
+                    last_position = 0
+
                 with open(CDR_FILE, 'r') as f:
                     if first_run:
                         f.seek(0)
                         first_run = False
                     else:
                         f.seek(last_position)
-                    
+
                     reader = csv.reader(f)
                     for row in reader:
                         if len(row) >= 17:
@@ -483,6 +540,59 @@ async def monitor_cdr():
         except Exception as e:
             logger.error(f"CDR monitoring error: {e}")
             await asyncio.sleep(5)
+
+
+async def cleanup_stale_active_calls():
+    """Safety net: mark calls stuck in an active state as ended.
+
+    The dashboard derives "active" calls purely from call_history.status, and the
+    only path that normally clears them is the CDR watcher. If a CDR record is
+    ever missed (log rotation, module misconfig, an unmatched row) a call would
+    otherwise show as active forever with an ever-growing duration. This periodic
+    sweep bounds that failure mode:
+      - never-connected calls (initiated/ringing) older than RING_TIMEOUT become
+        'no_answer'
+      - answered calls older than MAX_CALL_DURATION become 'completed' (the CDR
+        normally clears these long before this catch-all fires)
+    """
+    RING_TIMEOUT_SECONDS = 120
+    MAX_CALL_DURATION_SECONDS = 4 * 60 * 60  # 4 hours
+
+    while True:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                UPDATE call_history
+                SET status = 'no_answer',
+                    ended_at = CURRENT_TIMESTAMP
+                WHERE status IN ('initiated', 'ringing')
+                  AND (strftime('%s', 'now') - strftime('%s', started_at)) > ?
+            ''', (RING_TIMEOUT_SECONDS,))
+            ring_cleared = cursor.rowcount
+
+            cursor.execute('''
+                UPDATE call_history
+                SET status = 'completed',
+                    ended_at = CURRENT_TIMESTAMP
+                WHERE status = 'answered'
+                  AND (strftime('%s', 'now') - strftime('%s', started_at)) > ?
+            ''', (MAX_CALL_DURATION_SECONDS,))
+            answered_cleared = cursor.rowcount
+
+            conn.commit()
+            conn.close()
+
+            if ring_cleared or answered_cleared:
+                logger.info(
+                    f"🧹 Stale-call sweep: cleared {ring_cleared} unanswered, "
+                    f"{answered_cleared} long-answered calls"
+                )
+        except Exception as e:
+            logger.error(f"Stale-call cleanup error: {e}")
+
+        await asyncio.sleep(30)
 
 
 async def process_cdr_record(row):
@@ -518,8 +628,6 @@ async def process_cdr_record(row):
         clid = row[4]
         channel = row[5]
         dst_channel = row[6]
-        # DEBUG: Log the channel to see what we're working with
-        logger.info(f"🔍 DEBUG - channel: {channel}, context: {context}")
         lastapp = row[7]
         lastdata = row[8]
         start = row[9]
@@ -730,13 +838,17 @@ async def process_cdr_record(row):
         amd_info = f", AMD: {amd_result}" if amd_result else ""
         logger.info(f"📞 Recorded call: {source} → {dest} ({call_type}) - Duration: {duration_int}s, Talk: {billsec_int}s, Status: {disposition}{amd_info}")
 
-        # Update call_history status for ALL outbound calls (not just outbound-playback)
-        # This catches calls regardless of their context, as long as they went through the trunk
-        is_outbound_trunk_call = "trunk_main" in channel
+        # Update call_history status for ALL outbound calls (not just outbound-playback).
+        # This catches calls regardless of their context, as long as they went
+        # through the trunk. Call-file originated calls often have dst='s' and the
+        # trunk in dstchannel rather than channel, so check BOTH channels and the
+        # userfield direction marker set by the dialplan.
+        is_outbound_trunk_call = "trunk_main" in channel or "trunk_main" in dst_channel
+        is_outbound_userfield = userfield_type == "OUTBOUND"
         is_outbound_context = context in ("outbound-playback", "default", "internal", "from-asterisk")
         is_outbound_number = dest and len(dest) >= 10 and dest.isdigit()
 
-        if is_outbound_trunk_call or (is_outbound_context and is_outbound_number):
+        if is_outbound_trunk_call or is_outbound_userfield or (is_outbound_context and is_outbound_number):
             logger.info(f"🔄 Updating call_history for outbound call to {dest}")
             update_call_history_from_cdr(dest, duration_int, billsec_int, disposition)
 
@@ -893,6 +1005,9 @@ async def startup_event():
 
     asyncio.create_task(monitor_cdr())
     logger.info("✓ CDR monitoring task started")
+
+    asyncio.create_task(cleanup_stale_active_calls())
+    logger.info("✓ Stale-call cleanup task started")
 
     asyncio.create_task(run_scheduler())
     logger.info("✓ Call scheduler task started")
@@ -1084,8 +1199,11 @@ async def run_scheduler():
                             payload["message"] = message
 
                         # Make internal API call for broadcast
-                        # Longer timeout to allow for TTS generation
-                        response = requests.post(
+                        # Longer timeout to allow for TTS generation.
+                        # Run in a thread so the blocking request does not freeze
+                        # the event loop (and the CDR monitor) for up to 120s.
+                        response = await asyncio.to_thread(
+                            requests.post,
                             "http://localhost:8088/api/broadcast",
                             json=payload,
                             timeout=120
@@ -1105,8 +1223,10 @@ async def run_scheduler():
                         elif message:
                             payload["message"] = message
 
-                        # Longer timeout to allow for TTS generation
-                        response = requests.post(
+                        # Longer timeout to allow for TTS generation.
+                        # Run in a thread to avoid blocking the event loop.
+                        response = await asyncio.to_thread(
+                            requests.post,
                             "http://localhost:8088/api/call",
                             json=payload,
                             timeout=120
@@ -1281,8 +1401,13 @@ def get_default_did() -> Optional[str]:
         logger.error(f"Error getting default DID: {e}")
         return None
 
-async def generate_tts(text: str) -> Optional[str]:
-    """Generate TTS audio file using Google TTS"""
+def _generate_tts_sync(text: str) -> Optional[str]:
+    """Blocking TTS generation (network gTTS request + sox/ffmpeg conversion).
+
+    Runs in a worker thread via generate_tts() so the network call and the
+    subprocesses never block the asyncio event loop (which would freeze every
+    other request and background task for the duration).
+    """
     try:
         import hashlib
         from gtts import gTTS
@@ -1375,7 +1500,13 @@ async def generate_tts(text: str) -> Optional[str]:
         # ✅ Return fallback instead of None
         return "beep"
 
-def create_call_file(phone_number: str, audio_file: str, caller_id: str = None, 
+
+async def generate_tts(text: str) -> Optional[str]:
+    """Generate a TTS audio file without blocking the event loop."""
+    return await asyncio.to_thread(_generate_tts_sync, text)
+
+
+def create_call_file(phone_number: str, audio_file: str, caller_id: str = None,
                     call_id: str = None, max_retries: int = 3, 
                     pre_message_delay: int = 1, max_ring_time: int = 45):
     """Create Asterisk call file"""
@@ -1394,6 +1525,13 @@ def create_call_file(phone_number: str, audio_file: str, caller_id: str = None,
     
     # Check if AMD is enabled
     amd_enabled = is_amd_enabled()
+
+    # Sanitize every user-influenced value that goes into the spool file so a
+    # CR/LF cannot inject additional call-file directives (command execution).
+    phone_number = sanitize_call_file_value(phone_number)
+    caller_id = sanitize_call_file_value(caller_id)
+    audio_file = sanitize_call_file_value(audio_file)
+    call_id = sanitize_call_file_value(call_id)
 
     # Build call file content with caller ID in the channel
     call_file_content = f"""Channel: SIP/trunk_main/{phone_number}
@@ -1536,6 +1674,24 @@ async def process_broadcast(broadcast_id: str, request: BroadcastRequest):
     # Process calls with concurrency control
     semaphore = asyncio.Semaphore(request.concurrent_calls)
     
+    def _bump_broadcast_counter(column: str):
+        """Increment a broadcasts counter using a dedicated connection.
+
+        Each make_call coroutine runs concurrently via asyncio.gather; sharing
+        the outer cursor/connection across their await points corrupts state
+        ("recursive use of cursor") and loses counter updates. Use a short-lived
+        connection per update instead.
+        """
+        c = get_db_connection()
+        try:
+            c.execute(
+                f'UPDATE broadcasts SET {column} = {column} + 1 WHERE broadcast_id = ?',
+                (broadcast_id,)
+            )
+            c.commit()
+        finally:
+            c.close()
+
     async def make_call(phone_number: str):
         async with semaphore:
             try:
@@ -1556,24 +1712,14 @@ async def process_broadcast(broadcast_id: str, request: BroadcastRequest):
                     request.group_name,
                     broadcast_id
                 )
-                
-                cursor.execute('''
-                    UPDATE broadcasts 
-                    SET in_progress = in_progress + 1 
-                    WHERE broadcast_id = ?
-                ''', (broadcast_id,))
-                conn.commit()
-                
+
+                _bump_broadcast_counter('in_progress')
+
                 await asyncio.sleep(2)
-                
+
             except Exception as e:
                 logger.error(f"Error calling {phone_number}: {e}")
-                cursor.execute('''
-                    UPDATE broadcasts 
-                    SET failed = failed + 1 
-                    WHERE broadcast_id = ?
-                ''', (broadcast_id,))
-                conn.commit()
+                _bump_broadcast_counter('failed')
     
     # Execute all calls
     tasks = [make_call(number) for number in phone_numbers]
@@ -1685,7 +1831,14 @@ async def make_call(request: Request):
         # Ensure E.164 format
         if caller_number and not caller_number.startswith('+'):
             caller_number = f'+{caller_number}'
-        
+
+        # Sanitize every user-influenced value that goes into the spool file so
+        # a CR/LF cannot inject additional call-file directives (RCE via the
+        # caller_id / recording_file request fields).
+        caller_number = sanitize_call_file_value(caller_number)
+        formatted_number = sanitize_call_file_value(formatted_number)
+        audio_file = sanitize_call_file_value(audio_file)
+
         # Build channel based on direction
         channel = get_channel_string(direction, formatted_number)
         
@@ -2526,7 +2679,8 @@ async def upload_recording(file: UploadFile = File(...)):
             result = subprocess.run(
                 ['sox', file_path, '-r', '8000', '-c', '1', '-b', '16', '-e', 'signed-integer', output_path],
                 capture_output=True,
-                check=False
+                check=False,
+                timeout=30
             )
             if result.returncode == 0:
                 os.remove(file_path)
@@ -2556,18 +2710,19 @@ async def upload_recording(file: UploadFile = File(...)):
 @app.post("/api/recordings/rename")
 async def rename_recording(old_name: str, new_name: str):
     try:
-        old_path = os.path.join(ASTERISK_SOUNDS, old_name)
-        
+        old_path = safe_recording_path(old_name)
+
         # Replace spaces with underscores
         new_name = new_name.replace(' ', '_')
-        
+
         # Keep the same extension
         extension = Path(old_name).suffix
         if not new_name.endswith(extension):
             new_name += extension
-        
-        new_path = os.path.join(ASTERISK_SOUNDS, new_name)  # Changed from RECORDINGS_PATH
-        
+
+        # Validate the destination name too (blocks traversal via new_name)
+        new_path = safe_recording_path(new_name)
+
         if not os.path.exists(old_path):
             raise HTTPException(status_code=404, detail="Recording not found")
         
@@ -2587,11 +2742,11 @@ async def rename_recording(old_name: str, new_name: str):
 @app.delete("/api/recordings/{filename}")
 async def delete_recording(filename: str):
     try:
-        file_path = os.path.join(ASTERISK_SOUNDS, filename)
-        
+        file_path = safe_recording_path(filename)
+
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="Recording not found")
-        
+
         os.remove(file_path)
         logger.info(f"Recording deleted: {filename}")
         
@@ -2607,8 +2762,8 @@ async def delete_recording(filename: str):
 async def play_recording(filename: str, request: Request):
     """Stream a recording file"""
     try:
-        file_path = os.path.join(ASTERISK_SOUNDS, filename)
-        
+        file_path = safe_recording_path(filename)
+
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="Recording not found")
         
@@ -2642,7 +2797,7 @@ async def play_recording(filename: str, request: Request):
             }
             
             return StreamingResponse(iterfile(), status_code=206, headers=headers)
-        
+
         # No range header - send entire file
         return FileResponse(
             file_path,
@@ -2652,7 +2807,9 @@ async def play_recording(filename: str, request: Request):
                 "Content-Length": str(file_size)
             }
         )
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error playing recording: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -2662,7 +2819,7 @@ async def play_recording(filename: str, request: Request):
 async def download_recording(filename: str):
     """Download a recording file"""
     try:
-        file_path = os.path.join(ASTERISK_SOUNDS, filename)
+        file_path = safe_recording_path(filename)
 
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="Recording not found")
@@ -2703,8 +2860,8 @@ async def download_recording(filename: str):
 async def register_recording(filename: str, recording_id: str):
     """Register a recording created via phone system"""
     try:
-        file_path = os.path.join(ASTERISK_SOUNDS, filename)
-        
+        file_path = safe_recording_path(filename)
+
         # Wait for file to be written
         import time
         for i in range(10):
@@ -2734,7 +2891,9 @@ async def register_recording(filename: str, recording_id: str):
             "size": file_size,
             "created": created_time.isoformat()
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error registering recording: {e}")
         return {"status": "error", "message": str(e)}
@@ -3498,34 +3657,60 @@ async def restore_backup(file: UploadFile = File(...)):
         if "version" not in backup_data or "tables" not in backup_data:
             raise HTTPException(status_code=400, detail="Invalid backup file structure")
 
+        # Only these tables may ever be written by a restore. Table and column
+        # names cannot be parameterized in SQL, so they MUST be validated against
+        # a hardcoded whitelist / the live schema before interpolation - a
+        # crafted backup could otherwise inject arbitrary SQL via the names.
+        ALLOWED_TABLES = {
+            "call_history", "broadcasts", "contact_groups", "group_members",
+            "scheduled_calls", "dids", "settings", "broadcast_callbacks",
+        }
+
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
 
+        # Validate the ENTIRE payload before touching any data - a malformed or
+        # hostile table name must not leave the DB half-wiped.
+        for table_name in backup_data["tables"].keys():
+            if table_name not in ALLOWED_TABLES:
+                conn.close()
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Backup contains unknown table: {table_name}"
+                )
+
         restored_counts = {}
 
-        # Restore each table
-        for table_name, rows in backup_data["tables"].items():
-            if not rows:
-                restored_counts[table_name] = 0
-                continue
+        try:
+            # Restore each table (single transaction - rolls back on failure)
+            for table_name, rows in backup_data["tables"].items():
+                if not rows:
+                    restored_counts[table_name] = 0
+                    continue
 
-            try:
-                # Get column names from the first row
-                columns = list(rows[0].keys())
+                # Determine the real columns of the target table and only accept
+                # backup keys that match them exactly.
+                cursor.execute(f"PRAGMA table_info({table_name})")
+                real_columns = {info[1] for info in cursor.fetchall()}
+                columns = [c for c in rows[0].keys() if c in real_columns]
+                if not columns:
+                    logger.warning(f"No valid columns for table {table_name}; skipping")
+                    restored_counts[table_name] = 0
+                    continue
 
                 # Clear existing data (except for some tables we want to merge)
                 if table_name not in ["call_history"]:  # Don't clear call history
                     cursor.execute(f"DELETE FROM {table_name}")
 
-                # Insert rows
+                # Identifiers are now whitelist/schema-validated - safe to quote.
                 placeholders = ",".join(["?" for _ in columns])
-                column_names = ",".join(columns)
+                column_names = ",".join(f'"{c}"' for c in columns)
 
                 for row in rows:
                     values = [row.get(col) for col in columns]
                     try:
                         cursor.execute(
-                            f"INSERT OR REPLACE INTO {table_name} ({column_names}) VALUES ({placeholders})",
+                            f'INSERT OR REPLACE INTO {table_name} ({column_names}) VALUES ({placeholders})',
                             values
                         )
                     except sqlite3.Error as e:
@@ -3534,11 +3719,11 @@ async def restore_backup(file: UploadFile = File(...)):
                 restored_counts[table_name] = len(rows)
                 logger.info(f"📥 Restored {len(rows)} rows to {table_name}")
 
-            except sqlite3.OperationalError as e:
-                logger.warning(f"Error restoring table {table_name}: {e}")
-                restored_counts[table_name] = 0
-
-        conn.commit()
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            conn.close()
+            raise
         conn.close()
 
         logger.info(f"✅ Backup restored successfully from {file.filename}")
