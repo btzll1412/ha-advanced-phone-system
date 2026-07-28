@@ -1186,6 +1186,38 @@
         let phoneNumbers = [];
         let groupContacts = [];
 
+        // Escape untrusted values before inserting them into innerHTML.
+        // Many fields (caller ID / names on inbound calls, recording and group
+        // names, DID descriptions, blocked IPs) are attacker- or user-supplied;
+        // interpolating them raw into template-literal innerHTML is stored XSS.
+        function escapeHtml(value) {
+            if (value === null || value === undefined) return '';
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        // Escape a value used as a single-quoted JS string argument INSIDE a
+        // double-quoted inline handler, e.g. onclick="fn('<HERE>')". The browser
+        // HTML-decodes the attribute before parsing the JS, so plain HTML
+        // escaping is unsafe here (&#39; decodes back to ' and breaks out).
+        // Backslash-escape the JS-significant chars (these survive HTML-decode)
+        // and encode " so it can't break the attribute.
+        function jsAttr(value) {
+            if (value === null || value === undefined) return '';
+            return String(value)
+                .replace(/\\/g, '\\\\')
+                .replace(/'/g, "\\'")
+                .replace(/</g, '\\x3C')
+                .replace(/>/g, '\\x3E')
+                .replace(/\r/g, '\\r')
+                .replace(/\n/g, '\\n')
+                .replace(/"/g, '&quot;');
+        }
+
         // ============================================
         // AUTHENTICATION FUNCTIONS
         // ============================================
@@ -1301,8 +1333,8 @@
             const list = document.getElementById('phone-list');
             list.innerHTML = phoneNumbers.map(phone => `
                 <div class="phone-tag">
-                    ${phone}
-                    <button onclick="removePhone('${phone}')">×</button>
+                    ${escapeHtml(phone)}
+                    <button onclick="removePhone('${jsAttr(phone)}')">×</button>
                 </div>
             `).join('');
         }
@@ -1360,8 +1392,8 @@
             list.innerHTML = groupContacts.map((contact, index) => `
                 <div class="contact-card">
                     <div class="contact-info">
-                        <div class="contact-name">${contact.name}</div>
-                        <div class="contact-phone">${contact.phone_number}</div>
+                        <div class="contact-name">${escapeHtml(contact.name)}</div>
+                        <div class="contact-phone">${escapeHtml(contact.phone_number)}</div>
                     </div>
                     <div class="contact-actions">
                         <button class="btn btn-secondary btn-small" onclick="editGroupContact(${index})">Edit</button>
@@ -1466,19 +1498,19 @@
                     <div class="recording-card">
                         <div class="recording-info">
                             <h4>
-                                ${r.display_name}
-                                <span class="format-badge format-${r.format.toLowerCase()}">${r.format}</span>
+                                ${escapeHtml(r.display_name)}
+                                <span class="format-badge format-${escapeHtml(String(r.format).toLowerCase())}">${escapeHtml(r.format)}</span>
                             </h4>
                             <div class="recording-meta">
-                                ${r.size_mb} MB • ${new Date(r.created).toLocaleString()}
+                                ${escapeHtml(r.size_mb)} MB • ${new Date(r.created).toLocaleString()}
                             </div>
                         </div>
                         <div class="recording-actions">
-                            <button class="btn btn-secondary btn-small" onclick="playRecording('${r.filename}')">Play</button>
+                            <button class="btn btn-secondary btn-small" onclick="playRecording('${jsAttr(r.filename)}')">Play</button>
                             <button class="btn btn-danger btn-small" onclick="stopRecording()">Stop</button>
-                            <button class="btn btn-secondary btn-small" onclick="downloadRecording('${r.filename}')">Download</button>
-                            <button class="btn btn-secondary btn-small" onclick="renameRecording('${r.filename}')">Rename</button>
-                            <button class="btn btn-danger btn-small" onclick="deleteRecording('${r.filename}')">Delete</button>
+                            <button class="btn btn-secondary btn-small" onclick="downloadRecording('${jsAttr(r.filename)}')">Download</button>
+                            <button class="btn btn-secondary btn-small" onclick="renameRecording('${jsAttr(r.filename)}')">Rename</button>
+                            <button class="btn btn-danger btn-small" onclick="deleteRecording('${jsAttr(r.filename)}')">Delete</button>
                         </div>
                     </div>
                 `).join('');
@@ -1498,8 +1530,8 @@
                     return;
                 }
 
-                select.innerHTML = data.recordings.map(r => 
-                    `<option value="${r.display_name}">${r.display_name} (${r.format})</option>`
+                select.innerHTML = data.recordings.map(r =>
+                    `<option value="${escapeHtml(r.display_name)}">${escapeHtml(r.display_name)} (${escapeHtml(r.format)})</option>`
                 ).join('');
             } catch (error) {
                 select.innerHTML = '<option value="">Error loading recordings</option>';
@@ -1632,11 +1664,11 @@
                     return `
                         <div class="call-history-item" style="display: flex; justify-content: space-between; align-items: center; padding: 15px; margin-bottom: 10px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid ${statusColor};">
                             <div>
-                                <div style="font-weight: 600; color: #333;">${schedule.name}</div>
+                                <div style="font-weight: 600; color: #333;">${escapeHtml(schedule.name)}</div>
                                 <div style="font-size: 14px; color: #666;">
-                                    ${schedule.phone_number || schedule.group_name || 'No target'}
+                                    ${escapeHtml(schedule.phone_number || schedule.group_name || 'No target')}
                                     &bull; ${scheduledDate}
-                                    ${schedule.repeat_type !== 'none' ? `&bull; Repeats ${schedule.repeat_type}` : ''}
+                                    ${schedule.repeat_type !== 'none' ? `&bull; Repeats ${escapeHtml(schedule.repeat_type)}` : ''}
                                 </div>
                             </div>
                             <div style="display: flex; gap: 10px;">
@@ -1713,11 +1745,11 @@
                     return `
                         <div class="call-history-item" style="display: flex; justify-content: space-between; align-items: center; padding: 15px; margin-bottom: 10px; background: #e8f5e9; border-radius: 8px; border-left: 4px solid ${statusColor};">
                             <div>
-                                <div style="font-weight: 600; color: #333;">📢 ${schedule.name}</div>
+                                <div style="font-weight: 600; color: #333;">📢 ${escapeHtml(schedule.name)}</div>
                                 <div style="font-size: 14px; color: #666;">
-                                    ${recipients}
+                                    ${escapeHtml(recipients)}
                                     &bull; ${scheduledDate}
-                                    ${schedule.repeat_type !== 'none' ? `&bull; Repeats ${schedule.repeat_type}` : ''}
+                                    ${schedule.repeat_type !== 'none' ? `&bull; Repeats ${escapeHtml(schedule.repeat_type)}` : ''}
                                 </div>
                             </div>
                             <div style="display: flex; gap: 10px;">
@@ -1878,18 +1910,18 @@
                 <div class="call-history-item" style="background: linear-gradient(90deg, ${statusColors[call.status]}15 0%, transparent 100%);">
                     <div class="call-info">
                         <div class="call-number">
-                            ${call.phone_number}
-                            ${call.caller_id ? `<span style="color: #666; font-size: 14px; margin-left: 10px;">as ${call.caller_id}</span>` : ''}
+                            ${escapeHtml(call.phone_number)}
+                            ${call.caller_id ? `<span style="color: #666; font-size: 14px; margin-left: 10px;">as ${escapeHtml(call.caller_id)}</span>` : ''}
                         </div>
                         <div class="call-time">
-                            Duration: ${call.duration}s • Started: ${new Date(call.started_at).toLocaleTimeString()}
+                            Duration: ${escapeHtml(call.duration)}s • Started: ${new Date(call.started_at).toLocaleTimeString()}
                         </div>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px;">
                         <span class="status-badge" style="background: ${statusColors[call.status]}; color: white;">
                             ${statusLabels[call.status]}
                         </span>
-                        <button class="btn btn-danger btn-small" onclick="hangupCall('${call.call_id}')">Hangup</button>
+                        <button class="btn btn-danger btn-small" onclick="hangupCall('${jsAttr(call.call_id)}')">Hangup</button>
                     </div>
                 </div>
             `;
@@ -2050,10 +2082,10 @@
                         return `
                             <div class="call-history-item">
                                 <div class="call-info">
-                                    <div class="call-number">${call.summary || (call.from + ' → ' + call.to)}</div>
-                                    <div class="call-time">${date.toLocaleString()} • ${call.duration || 0}s</div>
+                                    <div class="call-number">${escapeHtml(call.summary || (call.from + ' → ' + call.to))}</div>
+                                    <div class="call-time">${date.toLocaleString()} • ${escapeHtml(call.duration || 0)}s</div>
                                 </div>
-                                <span class="status-badge ${isAnswered ? 'status-completed' : 'status-initiated'}">${status}</span>
+                                <span class="status-badge ${isAnswered ? 'status-completed' : 'status-initiated'}">${escapeHtml(status)}</span>
                             </div>
                         `;
                     }).join('');
@@ -2085,8 +2117,8 @@
                     <div class="broadcast-card">
                         <div style="display: flex; justify-content: space-between; align-items: start;">
                             <div>
-                                <h3>${b.name}</h3>
-                                <span class="status-badge status-${b.status}">${b.status}</span>
+                                <h3>${escapeHtml(b.name)}</h3>
+                                <span class="status-badge status-${escapeHtml(b.status)}">${escapeHtml(b.status)}</span>
                             </div>
                             <small style="color: #666;">${new Date(b.created_at).toLocaleString()}</small>
                         </div>
@@ -2132,14 +2164,14 @@
                     <div class="group-card">
                         <div style="display: flex; justify-content: space-between; align-items: start;">
                             <div>
-                                <h3>${g.name}</h3>
-                                <div class="member-count">${g.member_count} members</div>
-                                ${g.caller_id ? `<div style="color: #666; font-size: 14px; margin-top: 5px;">Caller ID: ${g.caller_id}</div>` : ''}
+                                <h3>${escapeHtml(g.name)}</h3>
+                                <div class="member-count">${escapeHtml(g.member_count)} members</div>
+                                ${g.caller_id ? `<div style="color: #666; font-size: 14px; margin-top: 5px;">Caller ID: ${escapeHtml(g.caller_id)}</div>` : ''}
                             </div>
                             <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-    <button class="btn btn-secondary btn-small" onclick="exportGroupCSV('${g.name}')">📥 Export</button>
-    <button class="btn btn-secondary btn-small" onclick="editGroup('${g.name}')">Edit</button>
-    <button class="btn btn-danger btn-small" onclick="deleteGroup('${g.name}')">Delete</button>
+    <button class="btn btn-secondary btn-small" onclick="exportGroupCSV('${jsAttr(g.name)}')">📥 Export</button>
+    <button class="btn btn-secondary btn-small" onclick="editGroup('${jsAttr(g.name)}')">Edit</button>
+    <button class="btn btn-danger btn-small" onclick="deleteGroup('${jsAttr(g.name)}')">Delete</button>
 </div>
                         </div>
                     </div>
@@ -2451,14 +2483,14 @@
                     <span style="font-size: 20px;">${directionIcon}</span>
                 </td>
                 <td style="padding: 12px;">
-                    <div style="font-weight: 500;">${record.from || 'Unknown'}</div>
-                    ${record.caller_id && record.caller_id !== record.from ? `<div style="font-size: 12px; color: #6c757d;">${record.caller_id}</div>` : ''}
+                    <div style="font-weight: 500;">${escapeHtml(record.from || 'Unknown')}</div>
+                    ${record.caller_id && record.caller_id !== record.from ? `<div style="font-size: 12px; color: #6c757d;">${escapeHtml(record.caller_id)}</div>` : ''}
                 </td>
                 <td style="padding: 12px; font-weight: 500;">
-                    ${record.to || 'Unknown'}
+                    ${escapeHtml(record.to || 'Unknown')}
                 </td>
                 <td style="padding: 12px;">
-                    ${record.extension ? `<span style="background: #e3f2fd; color: #1976d2; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;">Ext ${record.extension}</span>` : '-'}
+                    ${record.extension ? `<span style="background: #e3f2fd; color: #1976d2; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;">Ext ${escapeHtml(record.extension)}</span>` : '-'}
                 </td>
                 <td style="padding: 12px;">
                     <span style="background: ${typeColor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;">
@@ -2471,7 +2503,7 @@
                 </td>
                 <td style="padding: 12px;">
                     <span style="background: ${statusColor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;">
-                        ${statusEmoji} ${status}
+                        ${escapeHtml(statusEmoji)} ${escapeHtml(status)}
                     </span>
                 </td>
             </tr>
@@ -2966,13 +2998,13 @@ function exportGroupCSV(groupName) {
             tbody.innerHTML = systemDids.map(did => `
                 <tr>
                     <td style="padding: 10px; border-bottom: 1px solid #dee2e6; font-family: monospace;">
-                        ${did.phone_number}
+                        ${escapeHtml(did.phone_number)}
                     </td>
                     <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">
-                        ${did.name || '<span style="color: #999;">-</span>'}
+                        ${did.name ? escapeHtml(did.name) : '<span style="color: #999;">-</span>'}
                     </td>
                     <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">
-                        ${did.description || '<span style="color: #999;">-</span>'}
+                        ${did.description ? escapeHtml(did.description) : '<span style="color: #999;">-</span>'}
                     </td>
                     <td style="padding: 10px; border-bottom: 1px solid #dee2e6; text-align: center;">
                         ${did.is_default
@@ -2980,7 +3012,7 @@ function exportGroupCSV(groupName) {
                             : `<button onclick="setDefaultDid(${did.id})" class="btn btn-secondary btn-small">Set Default</button>`}
                     </td>
                     <td style="padding: 10px; border-bottom: 1px solid #dee2e6; text-align: center;">
-                        <button onclick="deleteDid(${did.id}, '${did.phone_number}')" class="btn btn-danger btn-small">🗑️ Delete</button>
+                        <button onclick="deleteDid(${did.id}, '${jsAttr(did.phone_number)}')" class="btn btn-danger btn-small">🗑️ Delete</button>
                     </td>
                 </tr>
             `).join('');
@@ -3273,8 +3305,8 @@ function exportGroupCSV(groupName) {
                         .join(', ');
 
                     statusEl.innerHTML = `<strong>Backup restored successfully!</strong><br>
-                        Backup date: ${result.backup_date}<br>
-                        Restored: ${summary || 'No data'}`;
+                        Backup date: ${escapeHtml(result.backup_date)}<br>
+                        Restored: ${escapeHtml(summary) || 'No data'}`;
 
                     // Refresh current view
                     loadSettings();
@@ -3335,12 +3367,12 @@ function exportGroupCSV(groupName) {
                     blockedList.innerHTML = allBlocked.map(ip => `
                         <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; border-bottom: 1px solid #eee;">
                             <div>
-                                <span style="font-family: monospace; font-weight: bold; color: #dc3545;">${ip}</span>
+                                <span style="font-family: monospace; font-weight: bold; color: #dc3545;">${escapeHtml(ip)}</span>
                                 <span style="color: #999; font-size: 12px; margin-left: 10px;">
                                     ${statusData.banned_ips?.includes(ip) ? '(fail2ban)' : '(manual)'}
                                 </span>
                             </div>
-                            <button onclick="unblockIP('${ip}')" class="btn btn-small btn-secondary" style="padding: 5px 15px;">
+                            <button onclick="unblockIP('${jsAttr(ip)}')" class="btn btn-small btn-secondary" style="padding: 5px 15px;">
                                 Unblock
                             </button>
                         </div>
@@ -3360,13 +3392,13 @@ function exportGroupCSV(groupName) {
                     attacksList.innerHTML = attacksData.attacks.map(attack => `
                         <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; border-bottom: 1px solid #eee;">
                             <div style="flex: 1;">
-                                <span style="font-family: monospace; font-weight: bold; color: #dc3545;">${attack.ip}</span>
+                                <span style="font-family: monospace; font-weight: bold; color: #dc3545;">${escapeHtml(attack.ip)}</span>
                                 <span style="background: ${getAttackTypeColor(attack.type)}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 10px;">
-                                    ${attack.type}
+                                    ${escapeHtml(attack.type)}
                                 </span>
-                                <div style="color: #999; font-size: 12px; margin-top: 4px;">${attack.timestamp}</div>
+                                <div style="color: #999; font-size: 12px; margin-top: 4px;">${escapeHtml(attack.timestamp)}</div>
                             </div>
-                            <button onclick="manualBlockIPDirect('${attack.ip}')" class="btn btn-small" style="background: #dc3545; padding: 5px 15px;">
+                            <button onclick="manualBlockIPDirect('${jsAttr(attack.ip)}')" class="btn btn-small" style="background: #dc3545; padding: 5px 15px;">
                                 Block
                             </button>
                         </div>

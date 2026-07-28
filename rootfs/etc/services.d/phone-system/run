@@ -384,6 +384,9 @@ maxretry = ${SECURITY_MAX_ATTEMPTS}
 bantime = ${SECURITY_BAN_TIME}
 findtime = 600
 ignoreip = ${IGNORE_IPS}
+# Asterisk logs with dateformat=%F %T -> "[2025-01-01 12:00:00]". Tell fail2ban
+# how to parse it explicitly so matched lines actually produce bans.
+datepattern = ^\[%%Y-%%m-%%d %%H:%%M:%%S\]
 JAIL_EOF
 
     # Add blocked IPs to iptables directly

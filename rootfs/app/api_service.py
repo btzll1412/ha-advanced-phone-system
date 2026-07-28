@@ -1199,8 +1199,11 @@ async def run_scheduler():
                             payload["message"] = message
 
                         # Make internal API call for broadcast
-                        # Longer timeout to allow for TTS generation
-                        response = requests.post(
+                        # Longer timeout to allow for TTS generation.
+                        # Run in a thread so the blocking request does not freeze
+                        # the event loop (and the CDR monitor) for up to 120s.
+                        response = await asyncio.to_thread(
+                            requests.post,
                             "http://localhost:8088/api/broadcast",
                             json=payload,
                             timeout=120
@@ -1220,8 +1223,10 @@ async def run_scheduler():
                         elif message:
                             payload["message"] = message
 
-                        # Longer timeout to allow for TTS generation
-                        response = requests.post(
+                        # Longer timeout to allow for TTS generation.
+                        # Run in a thread to avoid blocking the event loop.
+                        response = await asyncio.to_thread(
+                            requests.post,
                             "http://localhost:8088/api/call",
                             json=payload,
                             timeout=120
@@ -1396,8 +1401,13 @@ def get_default_did() -> Optional[str]:
         logger.error(f"Error getting default DID: {e}")
         return None
 
-async def generate_tts(text: str) -> Optional[str]:
-    """Generate TTS audio file using Google TTS"""
+def _generate_tts_sync(text: str) -> Optional[str]:
+    """Blocking TTS generation (network gTTS request + sox/ffmpeg conversion).
+
+    Runs in a worker thread via generate_tts() so the network call and the
+    subprocesses never block the asyncio event loop (which would freeze every
+    other request and background task for the duration).
+    """
     try:
         import hashlib
         from gtts import gTTS
@@ -1490,7 +1500,13 @@ async def generate_tts(text: str) -> Optional[str]:
         # ✅ Return fallback instead of None
         return "beep"
 
-def create_call_file(phone_number: str, audio_file: str, caller_id: str = None, 
+
+async def generate_tts(text: str) -> Optional[str]:
+    """Generate a TTS audio file without blocking the event loop."""
+    return await asyncio.to_thread(_generate_tts_sync, text)
+
+
+def create_call_file(phone_number: str, audio_file: str, caller_id: str = None,
                     call_id: str = None, max_retries: int = 3, 
                     pre_message_delay: int = 1, max_ring_time: int = 45):
     """Create Asterisk call file"""
@@ -1658,6 +1674,24 @@ async def process_broadcast(broadcast_id: str, request: BroadcastRequest):
     # Process calls with concurrency control
     semaphore = asyncio.Semaphore(request.concurrent_calls)
     
+    def _bump_broadcast_counter(column: str):
+        """Increment a broadcasts counter using a dedicated connection.
+
+        Each make_call coroutine runs concurrently via asyncio.gather; sharing
+        the outer cursor/connection across their await points corrupts state
+        ("recursive use of cursor") and loses counter updates. Use a short-lived
+        connection per update instead.
+        """
+        c = get_db_connection()
+        try:
+            c.execute(
+                f'UPDATE broadcasts SET {column} = {column} + 1 WHERE broadcast_id = ?',
+                (broadcast_id,)
+            )
+            c.commit()
+        finally:
+            c.close()
+
     async def make_call(phone_number: str):
         async with semaphore:
             try:
@@ -1678,24 +1712,14 @@ async def process_broadcast(broadcast_id: str, request: BroadcastRequest):
                     request.group_name,
                     broadcast_id
                 )
-                
-                cursor.execute('''
-                    UPDATE broadcasts 
-                    SET in_progress = in_progress + 1 
-                    WHERE broadcast_id = ?
-                ''', (broadcast_id,))
-                conn.commit()
-                
+
+                _bump_broadcast_counter('in_progress')
+
                 await asyncio.sleep(2)
-                
+
             except Exception as e:
                 logger.error(f"Error calling {phone_number}: {e}")
-                cursor.execute('''
-                    UPDATE broadcasts 
-                    SET failed = failed + 1 
-                    WHERE broadcast_id = ?
-                ''', (broadcast_id,))
-                conn.commit()
+                _bump_broadcast_counter('failed')
     
     # Execute all calls
     tasks = [make_call(number) for number in phone_numbers]
@@ -2655,7 +2679,8 @@ async def upload_recording(file: UploadFile = File(...)):
             result = subprocess.run(
                 ['sox', file_path, '-r', '8000', '-c', '1', '-b', '16', '-e', 'signed-integer', output_path],
                 capture_output=True,
-                check=False
+                check=False,
+                timeout=30
             )
             if result.returncode == 0:
                 os.remove(file_path)
