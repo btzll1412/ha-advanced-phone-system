@@ -1575,7 +1575,7 @@
             if (!newName) return;
 
             try {
-                const response = await fetch(`${API_URL}/api/recordings/rename?old_name=${filename}&new_name=${newName}`, {
+                const response = await fetch(`${API_URL}/api/recordings/rename?old_name=${encodeURIComponent(filename)}&new_name=${encodeURIComponent(newName)}`, {
                     method: 'POST'
                 });
 
@@ -1992,7 +1992,7 @@
                 };
 
                 try {
-                    const response = await fetch(`${API_URL}/api/scheduled_calls`, {
+                    const response = await fetch(`${API_URL}/api/scheduled`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(scheduleData)
@@ -2438,8 +2438,9 @@
 }
         function displayCallRecords(records) {
     const tableBody = document.getElementById('call-records-table');
+    displayedCallRecords = records;  // so the Details button can look up by index
 
-    tableBody.innerHTML = records.map(record => {
+    tableBody.innerHTML = records.map((record, idx) => {
         // Use start_time from API (not created_at)
         const date = new Date(record.start_time);
         const dateStr = date.toString() !== 'Invalid Date'
@@ -2506,6 +2507,9 @@
                         ${escapeHtml(statusEmoji)} ${escapeHtml(status)}
                     </span>
                 </td>
+                <td style="padding: 12px;">
+                    <button class="btn btn-secondary btn-small" onclick="showCallDetails(${idx})">Details</button>
+                </td>
             </tr>
         `;
     }).join('');
@@ -2543,78 +2547,69 @@
             return labels[type] || type;
         }
 
-        function showCallDetails(record) {
+        // Records currently shown in the call-history table, so the per-row
+        // "Details" button can look up its record by index.
+        let displayedCallRecords = [];
+
+        function showCallDetails(index) {
+            const record = displayedCallRecords[index];
+            if (!record) return;
             const modal = document.getElementById('call-details-modal');
             const content = document.getElementById('call-details-content');
-            
-            const date = new Date(record.created_at);
-            const billsec = parseInt(record.billsec) || 0;
+
+            // Use the fields /api/call_records actually returns: start_time,
+            // talk_time, from, to (NOT created_at/billsec/source_number/
+            // destination_number/channel, which the API does not provide).
+            const date = new Date(record.start_time);
+            const dateStr = date.toString() !== 'Invalid Date'
+                ? date.toLocaleString()
+                : (record.start_time || 'Unknown');
+            const talkTime = parseInt(record.talk_time) || 0;
             const duration = parseInt(record.duration) || 0;
-            
-            let status = 'UNKNOWN';
-            let statusEmoji = '❓';
-            
-            if (billsec >= 3) {
-                status = 'ANSWERED';
-                statusEmoji = '✅';
-            } else if (billsec > 0 && billsec < 3) {
-                status = 'DECLINED/QUICK HANGUP';
-                statusEmoji = '⚠️';
-            } else if (duration > 0) {
-                status = 'VOICEMAIL/NO ANSWER';
-                statusEmoji = '⚠️';
-            } else if (record.disposition === 'NO ANSWER') {
-                status = 'NO ANSWER';
-                statusEmoji = '❌';
-            } else if (record.disposition === 'BUSY') {
-                status = 'BUSY';
-                statusEmoji = '❌';
-            }
-            
+
+            let status = record.answer_type || record.disposition || 'UNKNOWN';
+            let statusEmoji = record.status_icon || '❓';
+            if (talkTime >= 3) { statusEmoji = '✅'; }
+            else if (talkTime > 0) { statusEmoji = '⚠️'; }
+            else if (record.disposition === 'NO ANSWER') { statusEmoji = '❌'; }
+
             content.innerHTML = `
                 <div style="display: grid; gap: 15px;">
                     <div style="display: grid; grid-template-columns: 140px 1fr; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
-                        <strong>Unique ID:</strong><span>${record.uniqueid || 'N/A'}</span>
-                        <strong>Call Type:</strong><span>${formatCallType(record.call_type || 'outbound')}</span>
-                        <strong>Direction:</strong><span>${record.direction || 'outbound'}</span>
-                        <strong>Status:</strong><span style="color: ${billsec >= 3 ? '#48bb78' : '#ed8936'}; font-weight: bold;">${status}</span>
+                        <strong>Unique ID:</strong><span>${escapeHtml(record.uniqueid || 'N/A')}</span>
+                        <strong>Call Type:</strong><span>${escapeHtml(formatCallType(record.call_type || 'outbound'))}</span>
+                        <strong>Direction:</strong><span>${escapeHtml(record.direction || 'outbound')}</span>
+                        <strong>Status:</strong><span style="color: ${talkTime >= 3 ? '#48bb78' : '#ed8936'}; font-weight: bold;">${statusEmoji} ${escapeHtml(status)}</span>
                     </div>
-                    
+
                     <div style="display: grid; grid-template-columns: 140px 1fr; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
-                        <strong>From:</strong><span>${record.source_number}</span>
-                        <strong>To:</strong><span>${record.destination_number}</span>
-                        ${record.caller_id ? `<strong>Caller ID:</strong><span>${record.caller_id}</span>` : ''}
-                        ${record.extension ? `<strong>Extension:</strong><span>${record.extension}</span>` : ''}
+                        <strong>From:</strong><span>${escapeHtml(record.from || 'Unknown')}</span>
+                        <strong>To:</strong><span>${escapeHtml(record.to || 'Unknown')}</span>
+                        ${record.caller_id ? `<strong>Caller ID:</strong><span>${escapeHtml(record.caller_id)}</span>` : ''}
+                        ${record.extension ? `<strong>Extension:</strong><span>${escapeHtml(record.extension)}</span>` : ''}
                     </div>
-                    
+
                     <div style="display: grid; grid-template-columns: 140px 1fr; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
-                        <strong>Time:</strong><span>${date.toLocaleString()}</span>
+                        <strong>Time:</strong><span>${escapeHtml(dateStr)}</span>
                         <strong>Total Duration:</strong><span>${duration}s (ring + talk)</span>
-                        <strong>Talk Time:</strong><span style="color: ${billsec >= 3 ? '#48bb78' : '#dc3545'}; font-weight: bold; font-size: 18px;">${billsec}s</span>
-                        <strong>Result:</strong><span>${statusEmoji} ${billsec >= 3 ? 'Person answered and talked' : billsec > 0 ? 'Call declined or quick hangup' : 'Went to voicemail or not answered'}</span>
+                        <strong>Talk Time:</strong><span style="color: ${talkTime >= 3 ? '#48bb78' : '#dc3545'}; font-weight: bold; font-size: 18px;">${talkTime}s</span>
+                        <strong>Result:</strong><span>${statusEmoji} ${talkTime >= 3 ? 'Person answered and talked' : talkTime > 0 ? 'Call declined or quick hangup' : 'Went to voicemail or not answered'}</span>
                     </div>
-                    
+
                     <div style="display: grid; grid-template-columns: 140px 1fr; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
-                        <strong>Channel:</strong><span style="font-size: 12px; word-break: break-all;">${record.channel || 'N/A'}</span>
-                        <strong>Destination:</strong><span style="font-size: 12px; word-break: break-all;">${record.destination_channel || 'N/A'}</span>
-                        <strong>Context:</strong><span>${record.context || 'N/A'}</span>
-                        <strong>Disposition:</strong><span>${record.disposition || 'N/A'}</span>
+                        <strong>Context:</strong><span>${escapeHtml(record.context || 'N/A')}</span>
+                        <strong>Disposition:</strong><span>${escapeHtml(record.disposition || 'N/A')}</span>
+                        ${record.amd_status ? `<strong>AMD:</strong><span>${escapeHtml(record.amd_status)}</span>` : ''}
                     </div>
-                    
-                    ${record.recording_id ? `
-                        <div style="padding: 10px; background: #e3f2fd; border-radius: 4px;">
-                            <strong>📼 Recording ID:</strong> ${record.recording_id}
-                        </div>
-                    ` : ''}
-                    
+
                     ${record.broadcast_id ? `
                         <div style="padding: 10px; background: #fce4ec; border-radius: 4px;">
-                            <strong>📢 Broadcast ID:</strong> ${record.broadcast_id}
+                            <strong>📢 Broadcast ID:</strong> ${escapeHtml(record.broadcast_id)}
                         </div>
                     ` : ''}
                 </div>
             `;
-            
+
             modal.style.display = 'flex';
         }
 
@@ -2772,22 +2767,26 @@ function exportCallHistory() {
     const csvContent = [
         headers.join(','),
         ...records.map(r => {
-            const billsec = parseInt(r.billsec) || 0;
-            let status = billsec >= 3 ? 'Human Answered' : billsec > 0 ? 'Quick Hangup' : 'Voicemail';
-            
+            // Match the keys /api/call_records actually returns:
+            // start_time, from, to, talk_time (NOT created_at/source_number/
+            // destination_number/billsec, which the API never returns).
+            const talkTime = parseInt(r.talk_time) || 0;
+            let status = talkTime >= 3 ? 'Human Answered' : talkTime > 0 ? 'Quick Hangup' : 'Voicemail';
+            const csv = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+
             return [
-                `"${new Date(r.created_at).toLocaleString()}"`,
-                `"${r.direction || ''}"`,
-                `"${r.source_number || ''}"`,
-                `"${r.destination_number || ''}"`,
-                `"${r.caller_id || ''}"`,
-                `"${r.extension || ''}"`,
-                `"${r.call_type || ''}"`,
+                csv(new Date(r.start_time).toLocaleString()),
+                csv(r.direction || ''),
+                csv(r.from || ''),
+                csv(r.to || ''),
+                csv(r.caller_id || ''),
+                csv(r.extension || ''),
+                csv(r.call_type || ''),
                 r.duration || 0,
-                r.billsec || 0,
-                `"${status}"`,
-                `"${r.disposition || ''}"`,
-                `"${r.uniqueid || ''}"`
+                r.talk_time || 0,
+                csv(status),
+                csv(r.disposition || ''),
+                csv(r.uniqueid || '')
             ].join(',');
         })
     ].join('\n');
@@ -2815,41 +2814,6 @@ function downloadCSVTemplate() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-}
-
-function updateCallHistory() {
-    fetch('/api/call_history?limit=10')
-        .then(response => response.json())
-        .then(calls => {
-            const tbody = document.getElementById('call-history-body');
-            tbody.innerHTML = '';
-            
-            calls.forEach(call => {
-                // ✅ Direction icon
-                let directionIcon = '';
-                if (call.direction === 'internal') {
-                    directionIcon = '🏠';  // Internal
-                } else if (call.direction === 'inbound') {
-                    directionIcon = '📥';  // Incoming
-                } else if (call.direction === 'outbound') {
-                    directionIcon = '📤';  // Outgoing
-                }
-                
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${directionIcon} ${call.direction}</td>
-                    <td>${call.source || 'Unknown'}</td>
-                    <td>${call.destination || 'Unknown'}</td>
-                    <td>${call.duration || 0}s</td>
-                    <td>${call.disposition || 'UNKNOWN'}</td>
-                    <td>${new Date(call.timestamp).toLocaleString()}</td>
-                `;
-                tbody.appendChild(row);
-            });
-        })
-        .catch(error => {
-            console.error('Error fetching call history:', error);
-        });
 }
 
 
