@@ -3174,60 +3174,6 @@ async def get_all_settings():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/settings/{key}")
-async def get_setting(key: str):
-    """Get a specific setting"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT value, updated_at FROM settings WHERE key = ?', (key,))
-        row = cursor.fetchone()
-        conn.close()
-
-        if not row:
-            raise HTTPException(status_code=404, detail=f"Setting '{key}' not found")
-
-        return {"key": key, "value": row[0], "updated_at": row[1]}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting setting {key}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/settings/{key}")
-async def update_setting(key: str, request: dict):
-    """Update a setting"""
-    try:
-        value = request.get("value")
-        if value is None:
-            raise HTTPException(status_code=400, detail="Value is required")
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            INSERT INTO settings (key, value, updated_at)
-            VALUES (?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(key) DO UPDATE SET
-                value = excluded.value,
-                updated_at = CURRENT_TIMESTAMP
-        ''', (key, str(value)))
-
-        conn.commit()
-        conn.close()
-
-        logger.info(f"✅ Setting updated: {key} = {value}")
-        return {"status": "success", "key": key, "value": value}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error updating setting {key}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 # ============================================================================
 # CALL SETTINGS ENDPOINTS
 # ============================================================================
@@ -3288,6 +3234,63 @@ async def update_call_settings(request: dict):
     except Exception as e:
         logger.error(f"Error updating call settings: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/settings/{key}")
+async def get_setting(key: str):
+    """Get a specific setting"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT value, updated_at FROM settings WHERE key = ?', (key,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Setting '{key}' not found")
+
+        return {"key": key, "value": row[0], "updated_at": row[1]}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting setting {key}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/settings/{key}")
+async def update_setting(key: str, request: dict):
+    """Update a setting"""
+    try:
+        value = request.get("value")
+        if value is None:
+            raise HTTPException(status_code=400, detail="Value is required")
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT INTO settings (key, value, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = CURRENT_TIMESTAMP
+        ''', (key, str(value)))
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"✅ Setting updated: {key} = {value}")
+        return {"status": "success", "key": key, "value": value}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating setting {key}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 
 
 def is_amd_enabled():
