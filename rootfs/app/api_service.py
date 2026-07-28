@@ -6,6 +6,7 @@ Handles calls, broadcasts, and Home Assistant integration
 import asyncio
 import csv
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -171,7 +172,10 @@ async def do_login(request: Request, response: Response):
         password = body.get("password", "")
         remember_me = body.get("remember_me", False)
 
-        if username == WEB_AUTH_USERNAME and password == WEB_AUTH_PASSWORD:
+        # Constant-time comparison to avoid leaking credentials via timing
+        username_ok = hmac.compare_digest(username, WEB_AUTH_USERNAME)
+        password_ok = hmac.compare_digest(password, WEB_AUTH_PASSWORD)
+        if username_ok and password_ok:
             # Create session with appropriate duration
             session_token, duration_seconds = create_session(remember_me=remember_me)
             response.set_cookie(
@@ -2234,35 +2238,38 @@ async def get_call_history(limit: int = 50):
 @app.post("/api/groups")
 async def create_group(group: ContactGroup):
     """Create a contact group"""
+    conn = None
     try:
         conn = get_db()
         cursor = conn.cursor()
-        
+
         # Create group
         cursor.execute('''
             INSERT INTO contact_groups (name, caller_id)
             VALUES (?, ?)
         ''', (group.name, group.caller_id))
-        
+
         group_id = cursor.lastrowid
-        
+
         # Add members with names
         for contact in group.contacts:
             cursor.execute('''
                 INSERT INTO group_members (group_id, phone_number, contact_name)
                 VALUES (?, ?, ?)
             ''', (group_id, contact.phone_number, contact.name))
-        
+
         conn.commit()
-        conn.close()
-        
+
         return {"status": "success", "group_id": group_id, "name": group.name}
-        
+
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=400, detail="Group already exists")
     except Exception as e:
         logger.error(f"Error creating group: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
 
 @app.get("/api/groups")
 async def list_groups():
@@ -2345,45 +2352,48 @@ async def get_group_details(group_name: str):
 @app.put("/api/groups/{group_name}")
 async def update_group(group_name: str, group: ContactGroup):
     """Update a contact group"""
+    conn = None
     try:
         conn = get_db()
         cursor = conn.cursor()
-        
+
         # Get group ID
         cursor.execute('SELECT id FROM contact_groups WHERE name = ?', (group_name,))
         row = cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Group not found")
-        
+
         group_id = row[0]
-        
+
         # Update group info
         cursor.execute('''
-            UPDATE contact_groups 
+            UPDATE contact_groups
             SET name = ?, caller_id = ?
             WHERE id = ?
         ''', (group.name, group.caller_id, group_id))
-        
+
         # Delete old members
         cursor.execute('DELETE FROM group_members WHERE group_id = ?', (group_id,))
-        
+
         # Add new members with names
         for contact in group.contacts:
             cursor.execute('''
                 INSERT INTO group_members (group_id, phone_number, contact_name)
                 VALUES (?, ?, ?)
             ''', (group_id, contact.phone_number, contact.name))
-        
+
         conn.commit()
-        conn.close()
-        
+
         return {"status": "success", "message": "Group updated successfully"}
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error updating group: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
 
 @app.delete("/api/groups/{group_name}")
 async def delete_group(group_name: str):
@@ -3304,7 +3314,7 @@ def is_amd_enabled():
         if row:
             return row[0].lower() == 'true'
         return True  # Default to enabled
-    except:
+    except Exception:
         return True  # Default to enabled on error
 
 

@@ -4,7 +4,7 @@
 import sqlite3
 import os
 
-DB_PATH = os.getenv('DB_PATH', '/data/phone_system.db')
+DB_PATH = os.getenv('DB_PATH', '/data/database/phone_system.db')
 
 def migrate():
     if not os.path.exists(DB_PATH):
