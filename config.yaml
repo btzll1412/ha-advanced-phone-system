@@ -45,7 +45,10 @@ options:
     username: "admin"
     password: "admin"
   tts_engine: "google_translate"
-  recordings_path: "/share/phone_recordings"
+  # Recordings are stored under /data (persistent add-on storage). This default
+  # matches where the service actually writes; /share is not mapped into the
+  # container, so a /share path would silently fail.
+  recordings_path: "/data/recordings"
   max_concurrent_calls: 5
   log_level: "info"
   recording_extension: "999"

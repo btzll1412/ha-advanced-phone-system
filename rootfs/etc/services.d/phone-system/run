@@ -4,15 +4,23 @@ bashio::log.info "================================================"
 bashio::log.info "  Advanced Phone System - Starting..."
 bashio::log.info "================================================"
 
+# Strip CR/LF from a user-supplied config value before writing it into a
+# generated Asterisk config file. Without this a value containing a newline
+# could inject additional directives (e.g. an extra peer or context=default)
+# into sip.conf. Config values are single-line, so this never affects valid input.
+sanitize_conf() {
+    printf '%s' "$1" | tr -d '\r\n'
+}
+
 # Load configuration
 SIP_ENABLED=$(bashio::config 'sip_trunk.enabled')
 SIP_PROVIDER=$(bashio::config 'sip_trunk.provider')
-SIP_HOST=$(bashio::config 'sip_trunk.host')
-SIP_PORT=$(bashio::config 'sip_trunk.port')
-SIP_USER=$(bashio::config 'sip_trunk.username')
-SIP_PASS=$(bashio::config 'sip_trunk.password')
-SIP_DOMAIN=$(bashio::config 'sip_trunk.from_domain')
-SIP_CALLER=$(bashio::config 'sip_trunk.caller_number')
+SIP_HOST=$(sanitize_conf "$(bashio::config 'sip_trunk.host')")
+SIP_PORT=$(sanitize_conf "$(bashio::config 'sip_trunk.port')")
+SIP_USER=$(sanitize_conf "$(bashio::config 'sip_trunk.username')")
+SIP_PASS=$(sanitize_conf "$(bashio::config 'sip_trunk.password')")
+SIP_DOMAIN=$(sanitize_conf "$(bashio::config 'sip_trunk.from_domain')")
+SIP_CALLER=$(sanitize_conf "$(bashio::config 'sip_trunk.caller_number')")
 
 # Load security configuration
 SECURITY_ENABLED=$(bashio::config 'security.enabled' 'true')
@@ -30,6 +38,12 @@ fi
 
 # Get recording system configuration
 RECORDING_EXTENSION=$(bashio::config 'recording_extension')
+# This value is substituted into extensions.conf via sed, so it must be a plain
+# number - a '/', '&', or newline would corrupt the sed expression / dialplan.
+if ! printf '%s' "$RECORDING_EXTENSION" | grep -Eq '^[0-9]{1,6}$'; then
+    bashio::log.warning "Invalid recording_extension '${RECORDING_EXTENSION}', falling back to 999"
+    RECORDING_EXTENSION="999"
+fi
 RECORDING_PASSWORD=$(bashio::config 'recording_password')
 
 # Set timezone
@@ -139,7 +153,7 @@ if [ "$SIP_ENABLED" = "true" ]; then
     DOMAIN="${SIP_DOMAIN:-$SIP_HOST}"
     
     # Get caller number if provided
-    SIP_CALLER=$(bashio::config 'sip_trunk.caller_number')
+    SIP_CALLER=$(sanitize_conf "$(bashio::config 'sip_trunk.caller_number')")
     
     # Build registration string separately to avoid escape issues
     REG_STRING="${SIP_USER}:${SIP_PASS}@${SIP_HOST}:${SIP_PORT}/${SIP_USER}"
@@ -230,25 +244,33 @@ bashio::log.info "Configuring extensions..."
 EXTENSION_COUNT=$(bashio::config 'extensions|length')
 
 for (( i=0; i < EXTENSION_COUNT; i++ )); do
-    EXT_NUMBER=$(bashio::config "extensions[${i}].number")
-    EXT_NAME=$(bashio::config "extensions[${i}].name")
-    EXT_SECRET=$(bashio::config "extensions[${i}].secret")
-    EXT_CALLER_ID=$(bashio::config "extensions[${i}].caller_id")
-    
+    EXT_NUMBER=$(sanitize_conf "$(bashio::config "extensions[${i}].number")")
+    EXT_NAME=$(sanitize_conf "$(bashio::config "extensions[${i}].name")")
+    EXT_SECRET=$(sanitize_conf "$(bashio::config "extensions[${i}].secret")")
+    EXT_CALLER_ID=$(sanitize_conf "$(bashio::config "extensions[${i}].caller_id")")
+    EXT_HOST=$(sanitize_conf "$(bashio::config "extensions[${i}].host" 2>/dev/null || echo "")")
+
     # Use extension-specific caller ID or fall back to trunk default
     if [ -z "$EXT_CALLER_ID" ]; then
         EXT_CALLER_ID="${SIP_CALLER}"
     fi
-    
-    bashio::log.info "  - Extension ${EXT_NUMBER}: ${EXT_NAME} (Caller ID: ${EXT_CALLER_ID})"
-    
+
+    # Static host (e.g. Algo speakers) if provided, otherwise dynamic registration
+    if [ -n "$EXT_HOST" ] && [ "$EXT_HOST" != "null" ]; then
+        HOST_LINE="host=${EXT_HOST}"
+        bashio::log.info "  - Extension ${EXT_NUMBER}: ${EXT_NAME} (static host ${EXT_HOST})"
+    else
+        HOST_LINE="host=dynamic"
+        bashio::log.info "  - Extension ${EXT_NUMBER}: ${EXT_NAME} (Caller ID: ${EXT_CALLER_ID})"
+    fi
+
     cat >> /etc/asterisk/sip.conf <<EOF
 
 [${EXT_NUMBER}]
 type=friend
 secret=${EXT_SECRET}
 context=internal
-host=dynamic
+${HOST_LINE}
 dtmfmode=rfc2833
 canreinvite=no
 nat=force_rport,comedia
