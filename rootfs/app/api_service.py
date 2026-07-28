@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 import sqlite3
 import subprocess
@@ -238,14 +239,21 @@ async def auth_middleware(request: Request, call_next):
     """Check authentication for protected endpoints"""
     path = request.url.path
 
-    # Public endpoints that don't require authentication
+    # Public endpoints that don't require authentication.
+    # NOTE: do NOT put "/api" here - the matcher below also treats each entry
+    # as a path prefix ("/api/..."), which would whitelist the ENTIRE API and
+    # bypass authentication. The bare "/api" info endpoint is still covered by
+    # the exact-match branch (path == p) below.
     public_paths = [
         "/login",
         "/api/auth/login",
         "/api/auth/status",
         "/api/auth/logout",
-        "/api",  # Info endpoint
     ]
+
+    # The bare "/api" info endpoint is public by exact match only.
+    if path == "/api":
+        return await call_next(request)
 
     # Static files and assets
     if path.startswith("/static") or path.endswith(".css") or path.endswith(".js"):
@@ -278,6 +286,44 @@ RECORDINGS_PATH = "/data/recordings"
 ASTERISK_SOUNDS = "/var/lib/asterisk/sounds/custom"
 # CDR file path
 CDR_FILE = "/var/log/asterisk/cdr-csv/Master.csv"
+
+
+# ============================================================================
+# INPUT SANITIZATION HELPERS
+# ============================================================================
+
+def sanitize_call_file_value(value) -> str:
+    """Sanitize a value before interpolating it into an Asterisk call file.
+
+    Spool call files are newline-delimited "Key: value" records. A CR/LF (or
+    any other control character) embedded in user-supplied input (caller ID,
+    phone number, audio filename) would let an attacker inject extra directives
+    such as 'Application: System' / 'Data: <cmd>', which Asterisk would then
+    execute. Strip all control characters so every value stays on one line.
+    """
+    if value is None:
+        return ""
+    return re.sub(r'[\x00-\x1f\x7f]', '', str(value))
+
+
+def safe_recording_path(filename: str) -> str:
+    """Resolve a user-supplied recording name to a path inside ASTERISK_SOUNDS.
+
+    Blocks path traversal (e.g. '../../data/database/phone_system.db') by
+    rejecting any directory component and verifying the resolved real path
+    stays within the recordings directory. Raises HTTPException(400) otherwise.
+    """
+    if not filename or filename in ('.', '..'):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    if '/' in filename or '\\' in filename or '..' in filename or '\x00' in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    if os.path.basename(filename) != filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    sounds_root = os.path.realpath(ASTERISK_SOUNDS)
+    resolved = os.path.realpath(os.path.join(sounds_root, filename))
+    if resolved != sounds_root and not resolved.startswith(sounds_root + os.sep):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    return resolved
 
 
 # Home Assistant API
@@ -1464,6 +1510,13 @@ def create_call_file(phone_number: str, audio_file: str, caller_id: str = None,
     # Check if AMD is enabled
     amd_enabled = is_amd_enabled()
 
+    # Sanitize every user-influenced value that goes into the spool file so a
+    # CR/LF cannot inject additional call-file directives (command execution).
+    phone_number = sanitize_call_file_value(phone_number)
+    caller_id = sanitize_call_file_value(caller_id)
+    audio_file = sanitize_call_file_value(audio_file)
+    call_id = sanitize_call_file_value(call_id)
+
     # Build call file content with caller ID in the channel
     call_file_content = f"""Channel: SIP/trunk_main/{phone_number}
 CallerID: {caller_id}
@@ -1754,7 +1807,14 @@ async def make_call(request: Request):
         # Ensure E.164 format
         if caller_number and not caller_number.startswith('+'):
             caller_number = f'+{caller_number}'
-        
+
+        # Sanitize every user-influenced value that goes into the spool file so
+        # a CR/LF cannot inject additional call-file directives (RCE via the
+        # caller_id / recording_file request fields).
+        caller_number = sanitize_call_file_value(caller_number)
+        formatted_number = sanitize_call_file_value(formatted_number)
+        audio_file = sanitize_call_file_value(audio_file)
+
         # Build channel based on direction
         channel = get_channel_string(direction, formatted_number)
         
@@ -2625,18 +2685,19 @@ async def upload_recording(file: UploadFile = File(...)):
 @app.post("/api/recordings/rename")
 async def rename_recording(old_name: str, new_name: str):
     try:
-        old_path = os.path.join(ASTERISK_SOUNDS, old_name)
-        
+        old_path = safe_recording_path(old_name)
+
         # Replace spaces with underscores
         new_name = new_name.replace(' ', '_')
-        
+
         # Keep the same extension
         extension = Path(old_name).suffix
         if not new_name.endswith(extension):
             new_name += extension
-        
-        new_path = os.path.join(ASTERISK_SOUNDS, new_name)  # Changed from RECORDINGS_PATH
-        
+
+        # Validate the destination name too (blocks traversal via new_name)
+        new_path = safe_recording_path(new_name)
+
         if not os.path.exists(old_path):
             raise HTTPException(status_code=404, detail="Recording not found")
         
@@ -2656,11 +2717,11 @@ async def rename_recording(old_name: str, new_name: str):
 @app.delete("/api/recordings/{filename}")
 async def delete_recording(filename: str):
     try:
-        file_path = os.path.join(ASTERISK_SOUNDS, filename)
-        
+        file_path = safe_recording_path(filename)
+
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="Recording not found")
-        
+
         os.remove(file_path)
         logger.info(f"Recording deleted: {filename}")
         
@@ -2676,8 +2737,8 @@ async def delete_recording(filename: str):
 async def play_recording(filename: str, request: Request):
     """Stream a recording file"""
     try:
-        file_path = os.path.join(ASTERISK_SOUNDS, filename)
-        
+        file_path = safe_recording_path(filename)
+
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="Recording not found")
         
@@ -2711,7 +2772,7 @@ async def play_recording(filename: str, request: Request):
             }
             
             return StreamingResponse(iterfile(), status_code=206, headers=headers)
-        
+
         # No range header - send entire file
         return FileResponse(
             file_path,
@@ -2721,7 +2782,9 @@ async def play_recording(filename: str, request: Request):
                 "Content-Length": str(file_size)
             }
         )
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error playing recording: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -2731,7 +2794,7 @@ async def play_recording(filename: str, request: Request):
 async def download_recording(filename: str):
     """Download a recording file"""
     try:
-        file_path = os.path.join(ASTERISK_SOUNDS, filename)
+        file_path = safe_recording_path(filename)
 
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="Recording not found")
@@ -2772,8 +2835,8 @@ async def download_recording(filename: str):
 async def register_recording(filename: str, recording_id: str):
     """Register a recording created via phone system"""
     try:
-        file_path = os.path.join(ASTERISK_SOUNDS, filename)
-        
+        file_path = safe_recording_path(filename)
+
         # Wait for file to be written
         import time
         for i in range(10):
@@ -2803,7 +2866,9 @@ async def register_recording(filename: str, recording_id: str):
             "size": file_size,
             "created": created_time.isoformat()
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error registering recording: {e}")
         return {"status": "error", "message": str(e)}
@@ -3567,34 +3632,60 @@ async def restore_backup(file: UploadFile = File(...)):
         if "version" not in backup_data or "tables" not in backup_data:
             raise HTTPException(status_code=400, detail="Invalid backup file structure")
 
+        # Only these tables may ever be written by a restore. Table and column
+        # names cannot be parameterized in SQL, so they MUST be validated against
+        # a hardcoded whitelist / the live schema before interpolation - a
+        # crafted backup could otherwise inject arbitrary SQL via the names.
+        ALLOWED_TABLES = {
+            "call_history", "broadcasts", "contact_groups", "group_members",
+            "scheduled_calls", "dids", "settings", "broadcast_callbacks",
+        }
+
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
 
+        # Validate the ENTIRE payload before touching any data - a malformed or
+        # hostile table name must not leave the DB half-wiped.
+        for table_name in backup_data["tables"].keys():
+            if table_name not in ALLOWED_TABLES:
+                conn.close()
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Backup contains unknown table: {table_name}"
+                )
+
         restored_counts = {}
 
-        # Restore each table
-        for table_name, rows in backup_data["tables"].items():
-            if not rows:
-                restored_counts[table_name] = 0
-                continue
+        try:
+            # Restore each table (single transaction - rolls back on failure)
+            for table_name, rows in backup_data["tables"].items():
+                if not rows:
+                    restored_counts[table_name] = 0
+                    continue
 
-            try:
-                # Get column names from the first row
-                columns = list(rows[0].keys())
+                # Determine the real columns of the target table and only accept
+                # backup keys that match them exactly.
+                cursor.execute(f"PRAGMA table_info({table_name})")
+                real_columns = {info[1] for info in cursor.fetchall()}
+                columns = [c for c in rows[0].keys() if c in real_columns]
+                if not columns:
+                    logger.warning(f"No valid columns for table {table_name}; skipping")
+                    restored_counts[table_name] = 0
+                    continue
 
                 # Clear existing data (except for some tables we want to merge)
                 if table_name not in ["call_history"]:  # Don't clear call history
                     cursor.execute(f"DELETE FROM {table_name}")
 
-                # Insert rows
+                # Identifiers are now whitelist/schema-validated - safe to quote.
                 placeholders = ",".join(["?" for _ in columns])
-                column_names = ",".join(columns)
+                column_names = ",".join(f'"{c}"' for c in columns)
 
                 for row in rows:
                     values = [row.get(col) for col in columns]
                     try:
                         cursor.execute(
-                            f"INSERT OR REPLACE INTO {table_name} ({column_names}) VALUES ({placeholders})",
+                            f'INSERT OR REPLACE INTO {table_name} ({column_names}) VALUES ({placeholders})',
                             values
                         )
                     except sqlite3.Error as e:
@@ -3603,11 +3694,11 @@ async def restore_backup(file: UploadFile = File(...)):
                 restored_counts[table_name] = len(rows)
                 logger.info(f"📥 Restored {len(rows)} rows to {table_name}")
 
-            except sqlite3.OperationalError as e:
-                logger.warning(f"Error restoring table {table_name}: {e}")
-                restored_counts[table_name] = 0
-
-        conn.commit()
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            conn.close()
+            raise
         conn.close()
 
         logger.info(f"✅ Backup restored successfully from {file.filename}")

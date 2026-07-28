@@ -47,7 +47,14 @@ def get_db_connection():
     return sqlite3.connect(db_path)
 
 def get_admin_pin():
-    """Get the admin PIN from the database settings table"""
+    """Get the admin PIN from the database settings table.
+
+    Returns None if the PIN is unavailable (not configured, or a DB error such
+    as a transient lock during a broadcast). The caller MUST treat None as
+    "deny access" - previously this fell back to "1234", which meant any error
+    silently reopened the admin menu with the default PIN even after the
+    operator had changed it (toll-fraud / unauthorized-access risk).
+    """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -57,16 +64,15 @@ def get_admin_pin():
         result = cursor.fetchone()
         conn.close()
 
-        if result:
+        if result and result[0]:
             return result[0]
-        else:
-            # Return default PIN if not found
-            return "1234"
+        # No PIN configured -> fail closed
+        return None
 
     except Exception as e:
         agi_verbose(f"Error getting admin PIN: {e}")
-        # Return default PIN on error
-        return "1234"
+        # On error, deny access rather than falling back to a default PIN
+        return None
 
 def main():
     """Main AGI handler"""
@@ -78,10 +84,15 @@ def main():
     # Get the admin PIN from database
     admin_pin = get_admin_pin()
 
-    agi_verbose(f"Admin PIN retrieved (length: {len(admin_pin)})")
-
-    # Set the ADMIN_PIN variable for the dialplan
-    agi_set_variable("ADMIN_PIN", admin_pin)
+    if not admin_pin:
+        agi_verbose("Admin PIN unavailable - denying admin access")
+        # A non-numeric sentinel can never equal a digits-only Read() entry,
+        # so the dialplan PIN check will always fail (fail closed).
+        agi_set_variable("ADMIN_PIN", "__DENY__")
+    else:
+        agi_verbose(f"Admin PIN retrieved (length: {len(admin_pin)})")
+        # Set the ADMIN_PIN variable for the dialplan
+        agi_set_variable("ADMIN_PIN", admin_pin)
 
 if __name__ == "__main__":
     main()
